@@ -32,6 +32,8 @@ directly from the official INDEC portal (https://www.indec.gob.ar).
 
 * Fedora Linux 43, R 4.5.2
 * GitHub Actions: ubuntu-latest, R release (via r-lib/actions)
+* Windows (win-builder), R 4.6.0 alpha
+* macOS: not tested due to R-hub service unavailability at submission time.
 
 ## Downstream dependencies
 
