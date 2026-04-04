@@ -21,7 +21,9 @@ REDATAM distribuidas oficialmente por el
 - Compatible con cualquier base RedatamX (.rxdb)
 
 ## Instalacion
-
+Este paquete se apoya en [`redatamx`](https://github.com/ideasybits/redatamx4r)
+de Jaime Salvador para la comunicacion con el motor REDATAM desarrollado por
+CELADE (CEPAL). Ambos se instalan automaticamente como dependencias.
 ```r
 # Version de desarrollo desde GitHub
 # install.packages("remotes")
