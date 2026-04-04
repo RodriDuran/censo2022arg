@@ -110,7 +110,7 @@ y de investigacion.
 Si utilizas este paquete en tu investigacion, por favor citalo:
 
 ```
-Duran, R. J. (2025). censo2022arg: Extraccion y Procesamiento de Microdatos
+Duran, R. J. (2026). censo2022arg: Extraccion y Procesamiento de Microdatos
 del Censo Nacional 2022 de Argentina. R package version 1.0.0.
 https://github.com/RodriDuran/censo2022arg
 ```
