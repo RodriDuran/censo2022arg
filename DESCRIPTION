@@ -39,6 +39,6 @@ Suggests:
 LinkingTo:
     cpp11
 VignetteBuilder: knitr
-URL: https://github.com/rjduran/censo2022arg
-BugReports: https://github.com/rjduran/censo2022arg/issues
+URL: https://github.com/RodriDuran/censo2022arg
+BugReports: https://github.com/RodriDuran/censo2022arg/issues
 RoxygenNote: 7.3.3
