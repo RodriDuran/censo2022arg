@@ -118,4 +118,4 @@ https://github.com/RodriDuran/censo2022arg
 
 ## Licencia
 
-GPL (>= 3). Ver [LICENSE](https://github.com/RodriDuran/censo2022arg/blob/main/LICENSE) para mas detalles.
+GPL (>= 3). Ver [LICENSE](https://www.gnu.org/licenses/gpl-3.0.html) para mas detalles.
