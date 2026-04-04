@@ -1,0 +1,152 @@
+//
+//  red_initialize.cpp -- Redatam initialize API
+//
+//  Copyright (C) 2024 Jaime Salvador
+//
+//  This file is part of Redatam package
+//
+//  Redatam package is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU General Public License as published by
+//  the Free Software Foundation, either version 2 of the License, or
+//  (at your option) any later version.
+//
+//  Redatam package is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//  GNU General Public License for more details.
+//
+//  You should have received a copy of the GNU General Public License
+//  along with Redatam package.  If not, see <http://www.gnu.org/licenses/>.
+//
+//  --------------------------------------------------------------------
+//  Modificaciones: Copyright (C) 2025  Rodrigo Javier Durán
+//  Instituto de Investigaciones en Energía No Convencional (INENCO)
+//  CONICET — Universidad Nacional de Salta
+//
+//  Modificación incorporada:
+//    - Carga de redc_session_close desde el motor libredengine.
+//      Esta función estaba presente en el binario del motor pero no
+//      era cargada por el wrapper original. Su carga permite invocarla
+//      desde red_execute.cpp para liberar memoria de sesión entre
+//      extracciones sucesivas.
+//  --------------------------------------------------------------------
+
+
+#include <iostream>
+
+#include <string>
+#include <functional>
+#include <iostream>
+#include <filesystem>
+
+#include "cpp11.hpp"
+
+#include "redengine_c.h"
+
+#include "dylib.h"
+
+std::shared_ptr<dylib> _RedatamEngineLibPtr;
+
+std::shared_ptr<RedatamAPI> API;
+
+typedef std::function<char*()> redc_versionFn;
+
+const std::string lib_name = "redengine-1.2.1-final";
+
+void redatamEngine(std::string libRuntimeName) {
+
+  try {
+
+    if(_RedatamEngineLibPtr==nullptr) {
+      API = std::make_shared<RedatamAPI>();
+      API->is_runtime_loaded = false;
+
+      _RedatamEngineLibPtr = std::make_shared<dylib>(libRuntimeName, lib_name);
+    }
+
+    API->redc_init    = _RedatamEngineLibPtr->get_function<void()>("redc_init");
+    API->redc_destroy = _RedatamEngineLibPtr->get_function<void()>("redc_destroy");
+
+    API->redc_version = _RedatamEngineLibPtr->get_function<char*()>("redc_version");
+    API->redc_banner  = _RedatamEngineLibPtr->get_function<char*()>("redc_banner");
+    API->redc_info    = _RedatamEngineLibPtr->get_function<char*()>("redc_info");
+
+    API->redc_dictionary_open = _RedatamEngineLibPtr->get_function<dictionary_ptr(const char* path, dictionary_entity_handle handle, void* user_data)>("redc_dictionary_open");
+    API->redc_dictionary_close = _RedatamEngineLibPtr->get_function<void(dictionary_ptr ptr)>("redc_dictionary_close");
+    API->redc_dictionary_list_entitites = _RedatamEngineLibPtr->get_function<void(dictionary_ptr ptr, dictionary_entity_handle handle, void* user_data)>("redc_dictionary_list_entitites");
+    API->redc_dictionary_list_variables = _RedatamEngineLibPtr->get_function<void(dictionary_ptr ptr, const char* entName, dictionary_variable_handle handle, void* user_data)>("redc_dictionary_list_variables");
+
+    API->redc_session_output_data =  _RedatamEngineLibPtr->get_function<void(session_ptr ptr, int index, int* type, int* dimension, int* field_count, int* row_count, char** out_name)>("redc_session_output_data");
+    API->redc_session_output_fields_type = _RedatamEngineLibPtr->get_function<void(session_ptr ptr, int index, int* fields_type, char** fields_name)>("redc_session_output_fields_type");
+    API->redc_session_output_iterate = _RedatamEngineLibPtr->get_function<void(session_ptr ptr, int index,dataset_new_row_handle handle, void* user_data)>("redc_session_output_iterate");
+    API->redc_session_output_count = _RedatamEngineLibPtr->get_function<int( session_ptr ptr )>("redc_session_output_count");
+
+    // Agregado por R. Durán (2025): carga redc_session_close del motor.
+    // La función existía en libredengine pero no era expuesta por el wrapper.
+    // Se localiza por nombre de símbolo en el binario compilado.
+    API->redc_session_close = _RedatamEngineLibPtr->get_function<void(session_ptr)>("redc_session_close");
+
+    API->redc_run_program = _RedatamEngineLibPtr->get_function<session_ptr( dictionary_ptr ptr, const char* buffer, compiler_callback callback, execution_callback ex_callback)>("redc_run_program");
+    API->redc_run_program_file = _RedatamEngineLibPtr->get_function<session_ptr( dictionary_ptr ptr, const char* file_name, compiler_callback callback, execution_callback ex_callback )>("redc_run_program_file");
+
+    //create
+    API->redc_create_database = _RedatamEngineLibPtr->get_function<void(const char*,const char*)>("redc_create_database");
+
+    //plugins
+    API->redc_plugins_load_plugin = _RedatamEngineLibPtr->get_function<void(const char *)>("redc_plugins_load_plugin");
+
+    API->is_runtime_loaded = true;
+  }
+  catch (const dylib::load_error& ex) {
+    //cpp11::warning(ex.what());
+  } catch (const dylib::symbol_error& ex) {
+    //cpp11::warning(ex.what());
+  }
+}
+
+[[cpp11::register]]
+std::string redatam_version( ) {
+  if(API->is_runtime_loaded) {
+    return API->redc_version();
+  }
+  else {
+    return "Redatam API no loaded!";
+  }
+}
+
+[[cpp11::register]]
+std::string redatam_info( ) {
+  if(API->is_runtime_loaded) {
+    return API->redc_info();
+  }
+  else {
+    return "API no loaded!";
+  }
+}
+
+
+[[cpp11::register]]
+void redatam_init_( std::string packageDir ) {
+  redatamEngine(packageDir);
+
+  if(API->is_runtime_loaded) {
+    API->redc_init();
+  }
+  else {
+    //cpp11::warning("Redatam engine library not initialized.");
+  }
+}
+
+[[cpp11::register]]
+void redatam_destroy_( ) {
+
+  if(API->is_runtime_loaded) {
+    API->redc_destroy();
+  }
+  else {
+    //cpp11::warning("Redatam engine library not initialized.");
+  }
+
+  API.reset();
+  _RedatamEngineLibPtr.reset();
+}

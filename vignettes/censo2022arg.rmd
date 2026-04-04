@@ -1,0 +1,268 @@
+---
+title: "Uso general de censo2022arg"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Uso general de censo2022arg}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = FALSE
+)
+```
+
+## Introduccion
+
+El paquete `censo2022arg` permite acceder y trabajar libremente con los
+microdatos del Censo Nacional de Poblacion, Hogares y Viviendas 2022 de
+Argentina sin necesidad de conocer la sintaxis del software REDATAM.
+Una vez extraidos los datos, el investigador puede analizarlos usando los
+paquetes de R de uso habitual: `dplyr`, `ggplot2`, `data.table`, `survey`,
+`spdep`, o cualquier otro del ecosistema R.
+
+El paquete se encarga de todo el proceso tecnico: extrae los microdatos desde
+las bases REDATAM distribuidas oficialmente por el INDEC, reconstruye los
+identificadores jerarquicos (vivienda, hogar, persona), etiqueta las variables
+con los diccionarios oficiales y verifica la integridad de los datos contra
+los totales publicados. El investigador recibe un objeto R estandar listo
+para analizar.
+
+El flujo de trabajo tiene seis pasos que se realizan en orden, y la mayoria
+solo deben ejecutarse una vez.
+
+```{r setup}
+library(censo2022arg)
+```
+
+## Paso 1: Configurar el directorio de datos
+
+El primer paso es elegir un directorio donde se guardaran todos los archivos
+del censo: bases REDATAM, diccionarios y microdatos extraidos. Puede ser
+cualquier ubicacion en su equipo o disco externo.
+
+```{r configurar}
+# Configurar para todas las sesiones futuras
+censo_configurar("/ruta/a/mis/datos/censo2022", persistent = TRUE)
+```
+
+Para verificar el estado actual de la configuracion en cualquier momento:
+
+```{r info}
+censo_info()
+```
+
+## Paso 2: Preparar el motor de extraccion
+
+El motor REDATAM incluido en el paquete `redatamx` tiene un limite interno
+de 100 registros por consulta. Para extraer el censo completo es necesario
+ampliar ese limite. La funcion `censo_verificar_engine()` verifica el estado
+del motor y, si es necesario, muestra las instrucciones exactas para
+prepararlo. Este paso se realiza una sola vez.
+
+```{r verificar}
+censo_verificar_engine()
+```
+
+## Paso 3: Descargar las bases del INDEC
+
+Las bases REDATAM del Censo 2022 se descargan directamente desde el portal
+oficial del INDEC. El paquete tambien descarga los diccionarios de variables
+y la documentacion metodologica.
+
+```{r descargar}
+# Descargar todo (recomendado la primera vez)
+censo_descargar()
+
+# Solo las bases REDATAM (~500 MB)
+censo_descargar(que = "bases")
+
+# Solo los diccionarios de variables
+censo_descargar(que = "metadatos")
+```
+
+## Paso 4: Extraer los microdatos
+
+La extraccion procesa las bases REDATAM provincia por provincia y genera
+archivos en formato Parquet para cada una. El proceso es retomable: si se
+interrumpe, al volver a ejecutar continua desde donde quedo.
+
+```{r extraer}
+# Extraer todas las provincias
+extraer_redatam()
+
+# Extraer solo una provincia (util para probar)
+extraer_redatam(provincias = 66)  # Salta
+
+# Extraer varias provincias
+extraer_redatam(provincias = c(66, 38, 34))  # Salta, Jujuy, Formosa
+
+# Con bloques mas pequenos para equipos con poca RAM
+extraer_redatam(max_por_bloque = 5)
+```
+
+Para cada provincia se generan cinco archivos:
+
+- `provincia_Personas.parquet` -- una fila por persona
+- `provincia_Hogares.parquet` -- una fila por hogar
+- `provincia_Viviendas.parquet` -- una fila por vivienda particular
+- `provincia_colectivas.parquet` -- personas en viviendas colectivas
+- `provincia_PO_VP.parquet` -- base completa combinada
+
+## Paso 5: Etiquetar las variables
+
+Los archivos extraidos tienen nombres de columna en formato tecnico del motor
+REDATAM (por ejemplo `p01_0`, `edad_2`). La funcion `censo_etiquetar()`
+aplica los diccionarios oficiales del INDEC para convertir esos nombres en
+nombres legibles (`P01`, `EDAD`) y transforma las variables categoricas en
+factores con sus etiquetas de valor.
+
+```{r etiquetar}
+# Etiquetar todas las provincias
+censo_etiquetar()
+
+# Solo algunas provincias
+censo_etiquetar(provincias = c(66, 38))
+
+# Solo la base de Personas
+censo_etiquetar(bases = "Personas")
+```
+
+El proceso es idempotente: si un archivo ya fue etiquetado, se detecta
+automaticamente y se omite.
+
+## Paso 6: Leer y analizar los datos
+
+Una vez extraidos y etiquetados, los microdatos se leen con `censo_leer()`.
+Los filtros y la seleccion de columnas se aplican usando Apache Arrow antes
+de cargar los datos en memoria, lo que permite trabajar con subconjuntos
+sin necesidad de disponer de la RAM suficiente para el conjunto completo.
+El resultado es un `data.frame`, `data.table` o `tibble` estandar de R,
+compatible con cualquier paquete del ecosistema.
+
+```{r leer-basico}
+# Personas de Salta
+personas <- censo_leer(base = "Personas", provincias = 66)
+
+# Hogares de Salta y Jujuy
+hogares <- censo_leer(base = "Hogares", provincias = c(66, 38))
+
+# Viviendas de Formosa
+viviendas <- censo_leer(base = "Viviendas", provincias = 34)
+```
+
+### Seleccion de columnas
+
+```{r leer-columnas}
+# Solo algunas variables
+personas <- censo_leer(
+  base      = "Personas",
+  provincias = 66,
+  columnas  = c("EDAD", "P02", "CONDACT", "NIVEL_ED", "IDRADIO")
+)
+```
+
+### Filtros de filas
+
+Los filtros se evaluan directamente sobre el archivo Parquet sin cargar
+todo el dataset en memoria:
+
+```{r leer-filtros}
+# Personas mayores de 18
+mayores <- censo_leer(
+  base       = "Personas",
+  provincias = 66,
+  filtro     = quote(EDAD >= 18)
+)
+
+# Personas ocupadas
+ocupados <- censo_leer(
+  base       = "Personas",
+  provincias = c(66, 38),
+  columnas   = c("EDAD", "P02", "CONDACT", "IDRADIO"),
+  filtro     = quote(CONDACT == 1)
+)
+```
+
+### Formato de salida
+
+```{r leer-formato}
+# Como data.table (para grandes volumenes de datos)
+personas_dt <- censo_leer(
+  base      = "Personas",
+  provincias = 66,
+  formato   = "data.table"
+)
+
+# Como tibble (para flujos tidyverse)
+personas_tbl <- censo_leer(
+  base      = "Personas",
+  provincias = 66,
+  formato   = "tibble"
+)
+```
+
+## Ejemplo de analisis
+
+Una vez que los datos estan en R como un objeto estandar, el investigador
+puede usar cualquier paquete habitual sin restricciones. El siguiente ejemplo
+calcula la tasa de actividad por sexo y grupo de edad en Salta usando `dplyr`
+-- exactamente igual que con cualquier otro dataset de R.
+
+```{r analisis}
+library(censo2022arg)
+library(dplyr)
+library(ggplot2)
+
+# Leer personas en edad activa con filtro previo a la carga en RAM
+personas <- censo_leer(
+  base       = "Personas",
+  provincias = 66,
+  columnas   = c("P02", "EDAD", "CONDACT"),
+  filtro     = quote(EDAD >= 14)
+)
+
+# Tasa de actividad por sexo y grupo de edad -- flujo dplyr estandar
+tasa_actividad <- personas |>
+  mutate(
+    grupo_edad = cut(EDAD,
+      breaks = c(14, 24, 34, 44, 54, 64, Inf),
+      labels = c("14-24", "25-34", "35-44", "45-54", "55-64", "65+"),
+      right  = FALSE
+    )
+  ) |>
+  group_by(P02, grupo_edad) |>
+  summarise(
+    activos = sum(CONDACT == 1, na.rm = TRUE),
+    total   = n(),
+    tasa    = round(activos / total * 100, 1),
+    .groups = "drop"
+  )
+
+# Visualizar con ggplot2 -- sin salir del ecosistema R
+ggplot(tasa_actividad, aes(x = grupo_edad, y = tasa, fill = P02)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "Tasa de actividad por sexo y grupo de edad -- Salta 2022",
+    x     = "Grupo de edad",
+    y     = "Tasa de actividad (%)",
+    fill  = "Sexo",
+    caption = "Fuente: Censo Nacional 2022 -- INDEC"
+  ) +
+  theme_minimal()
+```
+
+El mismo flujo funciona con `data.table`, `survey` para estimaciones con
+diseno muestral, `spdep` para analisis espacial a nivel de radio censal,
+o cualquier otro paquete del ecosistema R.
+
+## Nota legal
+
+Los datos del Censo 2022 estan protegidos por la Ley N 17.622 de secreto
+estadistico. Su uso esta permitido exclusivamente con fines estadisticos
+y de investigacion. Este paquete no distribuye datos del censo -- los datos
+se descargan directamente desde el portal oficial del INDEC
+(<https://www.indec.gob.ar>).
