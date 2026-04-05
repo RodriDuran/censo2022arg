@@ -12,9 +12,9 @@
 # (at your option) any later version.
 #
 # If you use this package in your research, please cite it as:
-#   Duran, R. J. (2025). censo2022arg: Herramientas para el analisis del
+#   Duran, R. J. (2026). censo2022arg: Herramientas para el analisis del
 #   Censo Argentino 2022. INENCO - CONICET/UNSa.
-#   https://github.com/RodriDuran/censo2022arg
+#   https://doi.org/10.5281/zenodo.19422784
 # =============================================================================
 # Proporciona una interfaz unificada para leer los archivos generados por
 # extraer_redatam() y etiquetados por censo_etiquetar(), con soporte para

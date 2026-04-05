@@ -1,24 +1,24 @@
 Package: censo2022arg
 Type: Package
-Title: Extracción y Procesamiento de Microdatos del Censo Nacional 2022 de Argentina
+Title: Extraccion y Procesamiento de Microdatos del Censo Nacional 2022 de Argentina
 Version: 1.0.0
 Authors@R: person(
     given   = "Rodrigo Javier",
-    family  = "Durán",
+    family  = "Duran",
     role    = c("aut", "cre"),
     email   = "rodrigo.duran@exa.unsa.edu.ar",
     comment = c(ORCID = "0000-0002-3957-9510")
   )
 Description: Permite extraer, etiquetar y leer los microdatos del Censo Nacional
-    de Población, Hogares y Viviendas 2022 de Argentina desde las bases REDATAM
+    de Poblacion, Hogares y Viviendas 2022 de Argentina desde las bases REDATAM
     distribuidas oficialmente por el INDEC. Implementa un pipeline completo de
-    extracción provincia por provincia con gestión eficiente de memoria,
-    reconstrucción de identificadores jerárquicos, etiquetado automático de
-    variables desde los diccionarios oficiales del INDEC, y verificación de
+    extraccion provincia por provincia con gestion eficiente de memoria,
+    reconstruccion de identificadores jerarquicos, etiquetado automatico de
+    variables desde los diccionarios oficiales del INDEC, y verificacion de
     integridad contra los totales publicados. Los datos deben descargarse
     directamente desde el portal oficial del INDEC
     (<https://www.indec.gob.ar>). El paquete no distribuye datos del censo.
-DOI: https://doi.org/10.5281/zenodo.19422784
+    Duran (2026) <doi:10.5281/zenodo.19422784>.
 License: GPL (>= 3)
 Encoding: UTF-8
 Language: es

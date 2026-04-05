@@ -1,3 +1,11 @@
+## Resubmission
+
+This is a resubmission. Changes based on CRAN feedback:
+
+* Removed non-standard 'DOI' field from DESCRIPTION
+* Added DOI citation inline in the Description field following the form
+  Authors (year) <doi:10.xxxxx/zenodo.xxxxxxx>
+
 ## Package description
 
 This package allows extracting, labeling and reading microdata from the
@@ -37,4 +45,4 @@ directly from the official INDEC portal (https://www.indec.gob.ar).
 
 ## Downstream dependencies
 
-None. This is a new submission.
+None. This is a resubmission.

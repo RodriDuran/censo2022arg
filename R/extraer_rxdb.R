@@ -11,9 +11,9 @@
 # (at your option) any later version.
 #
 # If you use this package in your research, please cite it as:
-#   Duran, R. J. (2025). censo2022arg: Herramientas para el analisis del
+#   Duran, R. J. (2026). censo2022arg: Herramientas para el analisis del
 #   Censo Argentino 2022. INENCO - CONICET/UNSa.
-#   https://github.com/RodriDuran/censo2022arg
+#   https://doi.org/10.5281/zenodo.19422784
 # =============================================================================
 # Esta funcion es el componente de proposito general del paquete. Mientras
 # que extraer_redatam() implementa el pipeline completo y especifico para

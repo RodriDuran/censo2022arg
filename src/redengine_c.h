@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>. //
 ///////////////////////////////////////////////////////////////////////////
 //
-//  Modificaciones: Copyright (C) 2025  Rodrigo Javier Durán
+//  Modificaciones: Copyright (C) 2026  Rodrigo Javier Durán
 //  Instituto de Investigaciones en Energía No Convencional (INENCO)
 //  CONICET — Universidad Nacional de Salta
 //
