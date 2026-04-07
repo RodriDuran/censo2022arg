@@ -219,8 +219,9 @@ censo_configurar <- function(
 
   # Persistencia entre sesiones
   if (persistent) {
-    rprofile <- file.path(Sys.getenv("HOME"), ".Rprofile")
-    linea    <- sprintf('\noptions(censo2022.dir = "%s")\n', dir)
+    rprofile     <- normalizePath("~/.Rprofile", mustWork = FALSE)
+    dir_portable <- normalizePath(dir, winslash = "/", mustWork = FALSE)
+    linea        <- sprintf('\noptions(censo2022.dir = "%s")\n', dir_portable)
 
     # Actualizar .Rprofile: eliminar configuracion anterior si existe
     if (file.exists(rprofile)) {
@@ -348,33 +349,50 @@ censo_xls_po <- function() file.path(censo_dir_dicc(),
 
 
 # =============================================================================
-# FUNCION: censo_verificar_engine()
+# censo_verificar_engine()
+# Verificación y guía de preparación del motor REDATAM
+#
+# El motor libredengine tiene un límite interno de extracción que difiere
+# entre sistemas operativos porque los compiladores (GCC en Linux/Mac,
+# MSVC en Windows) generan código binario distinto para la misma constante.
+# Por eso los offsets y bytes de referencia son diferentes en cada plataforma.
+#
+# Valores verificados experimentalmente:
+#
+#   Linux / Mac
+#     Offset:           0x956BC5
+#     Bytes originales: 40 A6 9F 02 C3 66 0F 1F
+#     Bytes parchados:  00 00 00 00 00 00 00 00
+#
+#   Windows
+#     Offset:           0x10CC61
+#     Bytes originales: 64 00 00 00
+#     Bytes parchados:  FF FF FF 7F  (retorna 2.147.483.647)
 # =============================================================================
 
-#' Verificar el estado del motor de extraccion REDATAM
+#' Verificar el estado del motor de extracción REDATAM
 #'
 #' @description
-#' Verifica si el motor de extraccion esta correctamente preparado para
-#' trabajar con el Censo 2022. Si no lo esta, muestra las instrucciones
-#' paso a paso para prepararlo segun su sistema operativo.
+#' Verifica si el motor de extracción está correctamente preparado para
+#' trabajar con el Censo 2022. Si no lo está, muestra las instrucciones
+#' paso a paso para prepararlo según su sistema operativo.
 #'
-#' \strong{?Por que es necesario este paso?}
+#' \strong{¿Por qué es necesario este paso?}
 #'
 #' El motor REDATAM (distribuido con el paquete \code{redatamx}) tiene
-#' un limite interno que restringe la extraccion a 100 registros por
-#' consulta. Este limite fue disenado para uso interactivo del software
-#' REDATAM, no para la extraccion masiva de microdatos. Para poder
+#' un límite interno que restringe la extracción a 100 registros por
+#' consulta. Este límite fue diseñado para uso interactivo del software
+#' REDATAM, no para la extracción masiva de microdatos. Para poder
 #' extraer los 44 millones de registros del censo, es necesario ampliar
-#' ese limite aplicando una modificacion puntual al archivo del motor.
+#' ese límite aplicando una modificación puntual al archivo del motor.
 #'
-#' Esta modificacion es de bajo nivel (un ajuste de 8 bytes en el
-#' binario compilado) y no afecta ninguna otra funcionalidad del motor
-#' ni del paquete \code{redatamx}. Debe realizarse una sola vez, y
-#' puede revertirse en cualquier momento usando la copia de seguridad
-#' que la funcion indica crear.
+#' Esta modificación es de bajo nivel (unos pocos bytes en el binario
+#' compilado) y no afecta ninguna otra funcionalidad. Debe realizarse
+#' una sola vez, y puede revertirse en cualquier momento usando la
+#' copia de seguridad que la función indica crear.
 #'
-#' @return Invisible \code{TRUE} si el motor esta listo, \code{FALSE}
-#'   si requiere preparacion.
+#' @return Invisible \code{TRUE} si el motor está listo, \code{FALSE}
+#'   si requiere preparación.
 #'
 #' @examples
 #' \dontrun{
@@ -385,17 +403,20 @@ censo_xls_po <- function() file.path(censo_dir_dicc(),
 #' @export
 censo_verificar_engine <- function() {
 
-  # Localizar el binario del motor segun el sistema operativo
-  so_nombre <- switch(.Platform$OS.type,
-                      windows = "libredengine-1.2.1-final.dll",
-                      "libredengine-1.2.1-final.so"   # Linux y Mac
-  )
+  es_windows <- .Platform$OS.type == "windows"
+
+  # Nombre del binario según sistema operativo
+  so_nombre <- if (es_windows) {
+    "libredengine-1.2.1-final.dll"
+  } else {
+    "libredengine-1.2.1-final.so"
+  }
 
   so_path <- system.file("redengine", so_nombre, package = "redatamx")
 
   if (!nzchar(so_path) || !file.exists(so_path)) {
-    cat("[ERROR] No se encontro el motor REDATAM.\n")
-    cat("[INFO]  Verifique que el paquete redatamx esta instalado:\n\n")
+    cat("[ERROR] No se encontró el motor REDATAM.\n")
+    cat("[INFO]  Verifique que el paquete redatamx está instalado:\n\n")
     cat("          install.packages('redatamx')\n\n")
     return(invisible(FALSE))
   }
@@ -403,90 +424,114 @@ censo_verificar_engine <- function() {
   cat("[INFO] Motor encontrado:\n")
   cat("      ", so_path, "\n\n")
 
-  # Valores de referencia para verificar el estado del motor:
-  # OFFSET: posicion exacta en el binario donde se encuentra el limite
-  # BYTES_ORIG: bytes originales que corresponden al limite de 100 filas
-  # BYTES_PARCHE: bytes que reemplazan el limite (ceros = sin restriccion)
-  OFFSET       <- 0x956bc5
-  BYTES_ORIG   <- as.raw(c(0x40, 0xA6, 0x9F, 0x02, 0xC3, 0x66, 0x0F, 0x1F))
-  BYTES_PARCHE <- as.raw(rep(0x00, 8))
+  # ------------------------------------------------------------------
+  # Parámetros del parche por sistema operativo.
+  # Los offsets y bytes fueron determinados experimentalmente analizando
+  # el binario compilado en cada plataforma con la versión 1.2.1 del motor.
+  # ------------------------------------------------------------------
+  if (es_windows) {
+
+    # Windows (compilado con MSVC):
+    # La función view_max_rows compila como B8 64 00 00 00 C3
+    # (MOV EAX, 100; RET). El parche reemplaza los 4 bytes del operando
+    # 64 00 00 00 por FF FF FF 7F para retornar 2.147.483.647.
+    OFFSET       <- 0x10CC61
+    BYTES_ORIG   <- as.raw(c(0x64, 0x00, 0x00, 0x00))
+    BYTES_PARCHE <- as.raw(c(0xFF, 0xFF, 0xFF, 0x7F))
+    N_BYTES      <- 4L
+
+  } else {
+
+    # Linux y Mac (compilado con GCC):
+    # El parche reemplaza 8 bytes que codifican el límite de 100 filas
+    # con ceros, eliminando la restricción.
+    OFFSET       <- 0x956BC5
+    BYTES_ORIG   <- as.raw(c(0x40, 0xA6, 0x9F, 0x02, 0xC3, 0x66, 0x0F, 0x1F))
+    BYTES_PARCHE <- as.raw(rep(0x00, 8))
+    N_BYTES      <- 8L
+  }
 
   # Leer los bytes actuales en el offset conocido
-  con <- file(so_path, "rb")
+  con            <- file(so_path, "rb")
   seek(con, OFFSET)
-  bytes_actuales <- readBin(con, "raw", n = 8)
+  bytes_actuales <- readBin(con, "raw", n = N_BYTES)
   close(con)
 
   ya_parchado <- identical(bytes_actuales, BYTES_PARCHE)
   es_original <- identical(bytes_actuales, BYTES_ORIG)
 
-  # El motor ya fue preparado correctamente
+  # Motor ya preparado correctamente
   if (ya_parchado) {
-    cat("[OK]   El motor esta correctamente preparado.\n")
-    cat("[OK]   El limite de extraccion ha sido ampliado.\n")
+    cat("[OK]   El motor está correctamente preparado.\n")
+    cat("[OK]   El límite de extracción ha sido ampliado.\n")
     return(invisible(TRUE))
   }
 
-  # Los bytes no coinciden con ninguna version conocida.
-  # Esto puede ocurrir si redatamx fue actualizado a una version nueva.
+  # Versión desconocida: puede ser una actualización de redatamx
   if (!es_original) {
     cat("[AVISO] Los bytes del motor no coinciden con la version conocida.\n")
     cat("[AVISO] Bytes encontrados:",
         paste(toupper(as.character(bytes_actuales)), collapse = " "), "\n")
     cat("[AVISO] Es posible que el paquete redatamx haya sido actualizado.\n\n")
     cat("[INFO]  Por favor, reporte este mensaje en:\n")
-    cat("          https://github.com/[tu_usuario]/censo2022arg/issues\n\n")
+    cat("          https://github.com/RodriDuran/censo2022arg/issues\n\n")
     return(invisible(FALSE))
   }
 
-  # El motor esta en su estado original: mostrar instrucciones de preparacion
+  # Motor sin preparar: mostrar instrucciones según sistema operativo
   so_bak <- paste0(so_path, ".bak")
 
-  cat("[AVISO] El motor no esta preparado para la extraccion completa.\n")
+  cat("[AVISO] El motor no está preparado para la extracción completa.\n")
   cat("[AVISO] Sin este paso, solo se pueden extraer 100 registros.\n\n")
-  cat("  A continuacion se indican los pasos para preparar el motor.\n")
+  cat("  A continuación se indican los pasos para preparar el motor.\n")
   cat("  Solo necesita hacerlo una vez.\n\n")
 
-  if (.Platform$OS.type == "windows") {
+  if (es_windows) {
 
-    cat("-- Instrucciones para Windows ------------------------------------\n")
-    cat("  Abra PowerShell COMO ADMINISTRADOR:\n")
-    cat("  (clic derecho sobre PowerShell -> 'Ejecutar como administrador')\n\n")
-    cat("  PASO 1 - Crear copia de seguridad (recomendado):\n\n")
-    cat(sprintf('  Copy-Item "%s" "%s"\n\n', so_path, so_bak))
-    cat("  PASO 2 - Preparar el motor (copie y pegue exactamente):\n\n")
+    cat("── Instrucciones para Windows ────────────────────────────────────\n")
+    cat("  1. Cierre RStudio y toda instancia de R completamente.\n")
+    cat("  2. Abra PowerShell COMO ADMINISTRADOR:\n")
+    cat("     (clic derecho sobre PowerShell -> 'Ejecutar como administrador')\n\n")
+    cat("  PASO 1 — Crear copia de seguridad:\n\n")
+    cat(sprintf('  Copy-Item "%s" `\n          "%s"\n\n', so_path, so_bak))
+    cat("  PASO 2 — Preparar el motor (copie y pegue exactamente):\n\n")
     cat(sprintf(
-      '  $path   = "%s"
-  $offset = 0x%X
-  $bytes  = [System.IO.File]::ReadAllBytes($path)
-  0..7 | ForEach-Object { $bytes[$offset + $_] = 0x00 }
+      '  $path = "%s"
+  $bytes = [System.IO.File]::ReadAllBytes($path)
+  $bytes[0x%X] = 0xFF
+  $bytes[0x%X] = 0xFF
+  $bytes[0x%X] = 0xFF
+  $bytes[0x%X] = 0x7F
   [System.IO.File]::WriteAllBytes($path, $bytes)
   Write-Host "Motor preparado correctamente"
-', so_path, OFFSET))
-    cat("\n  PASO 3 - Verificar desde R:\n\n")
+',
+      so_path,
+      OFFSET, OFFSET + 1L, OFFSET + 2L, OFFSET + 3L
+    ))
+    cat("\n  PASO 3 — Abra R y verifique:\n\n")
     cat("    censo_verificar_engine()\n\n")
     cat("  Si algo no funciona, recupere la copia de seguridad:\n\n")
-    cat(sprintf('  Copy-Item "%s" "%s"\n', so_bak, so_path))
+    cat(sprintf('  Copy-Item "%s" `\n          "%s"\n', so_bak, so_path))
 
   } else {
 
-    cat("-- Instrucciones para Linux / Mac --------------------------------\n")
+    cat("── Instrucciones para Linux / Mac ────────────────────────────────\n")
     cat("  Abra una terminal y ejecute los siguientes comandos:\n\n")
-    cat("  PASO 1 - Crear copia de seguridad (recomendado):\n\n")
+    cat("  PASO 1 — Crear copia de seguridad:\n\n")
     cat(sprintf('  cp "%s" \\\n     "%s"\n\n', so_path, so_bak))
-    cat("  PASO 2 - Preparar el motor (copie y pegue exactamente):\n\n")
+    cat("  PASO 2 — Preparar el motor (copie y pegue exactamente):\n\n")
     cat(sprintf(
       '  printf \'\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\' | \\
     dd of="%s" \\
     bs=1 seek=$((0x%X)) conv=notrunc
 ', so_path, OFFSET))
-    cat("\n  PASO 3 - Verificar desde R:\n\n")
+    cat("\n  PASO 3 — Verifique desde R:\n\n")
     cat("    censo_verificar_engine()\n\n")
     cat("  Si algo no funciona, recupere la copia de seguridad:\n\n")
     cat(sprintf('  cp "%s" \\\n     "%s"\n', so_bak, so_path))
   }
 
-  cat("-----------------------------------------------------------------\n\n")
+  cat("─────────────────────────────────────────────────────────────────\n\n")
   invisible(FALSE)
 }
 
@@ -566,11 +611,14 @@ censo_info <- function() {
     "Diccionario VP (XLS)"          = censo_xls_vp(),
     "Diccionario VC (XLS)"          = censo_xls_vc()
   )
-  bases_ok <- TRUE
+  bases_rxdb_ok <- file.exists(censo_rxdb_vp()) &&
+    file.exists(censo_rxdb_po()) &&
+    file.exists(censo_rxdb_vc())
+  bases_xls_ok  <- file.exists(censo_xls_vp()) &&
+    file.exists(censo_xls_vc())
   for (nom in names(archivos)) {
     existe <- file.exists(archivos[[nom]])
-    if (!existe) bases_ok <- FALSE
-    cat(sprintf("  %-32s %s\n", nom, if (existe) "OK" else "[no encontrado]"))
+    cat(sprintf("  %-30s %s\n", nom, if (existe) "OK" else "[no encontrado]"))
   }
 
   # Listar provincias ya extraidas
@@ -589,11 +637,15 @@ censo_info <- function() {
 
   # Sugerir el proximo paso segun el estado actual
   cat("\n-- Proximo paso sugerido -----------------------------------------\n")
-  if (!bases_ok) {
-    cat("  Las bases del censo no estan descargadas. Ejecute:\n\n")
+  if (!bases_rxdb_ok) {
+    cat("  Las bases del censo no están descargadas. Ejecutá:\n\n")
     cat("    censo_descargar()\n\n")
     cat("  Si ya las descargo manualmente, puede pasarlas directamente\n")
     cat("  a extraer_redatam(). Consulte: ?extraer_redatam\n")
+  } else if (!bases_xls_ok) {
+    cat("  Las bases están disponibles pero faltan los diccionarios de variables.\n")
+    cat("  Son necesarios para etiquetar los microdatos. Ejecute:\n\n")
+    cat("    censo_descargar(que = 'metadatos')\n")
   } else if (length(provs) == 0) {
     cat("  Las bases estan disponibles. Para extraer los microdatos:\n\n")
     cat("    extraer_redatam()                # todas las provincias\n")
@@ -633,9 +685,13 @@ censo_info <- function() {
 # =============================================================================
 .descomprimir_indec <- function(zip_path, destino) {
 
-  tmp_dir <- file.path(tempdir(), "censo_meta_tmp")
+  tmp_dir <- normalizePath(
+    file.path(tempdir(), "censo_meta_tmp"),
+    winslash = "/", mustWork = FALSE
+  )
+  destino <- normalizePath(destino, winslash = "/", mustWork = FALSE)
   dir.create(tmp_dir, showWarnings = FALSE, recursive = TRUE)
-  on.exit(unlink(tmp_dir, recursive = TRUE))  # limpiar al salir
+  on.exit(unlink(tmp_dir, recursive = TRUE))
 
   # Extraer todos los archivos ignorando la estructura de carpetas del ZIP.
   # junkpaths = TRUE evita que los nombres corruptos de las carpetas
@@ -652,7 +708,7 @@ censo_info <- function() {
   }
 
   # Corregir nombres de archivo con codificacion CP850 -> UTF-8.
-  # Los bytes corruptos corresponden a: \x82 = e, \xa2 = o, \xa1 = i
+  # Los bytes corruptos corresponden a: \xrx82 = e, \xa2 = o, \xa1 = i
   mapeo_nombres <- c(
     "c2022-diccionario_pueblos_originarios_afrodescendientes_g\x82nero.xlsx"      = "c2022-diccionario_pueblos_originarios_afrodescendientes_genero.xlsx",
     "c2022-diccionario_viviendas_colectivas_poblaci\xa2n_situaci\xa2n_calle.xlsx" = "c2022-diccionario_viviendas_colectivas_poblacion_situacion_calle.xlsx",

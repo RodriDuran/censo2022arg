@@ -134,7 +134,12 @@ extraer_rxdb <- function(
     dirname(output_file),
     paste0(base_nom, "_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".log")
   )
-  tmp_dir <- file.path(dirname(output_file), paste0(".tmp_", base_nom))
+  tmp_dir <- normalizePath(
+    file.path(dirname(output_file), paste0(".tmp_", base_nom)),
+    winslash = "/", mustWork = FALSE
+  )
+  dic_path    <- normalizePath(dic_path,    winslash = "/", mustWork = FALSE)
+  output_file <- normalizePath(output_file, winslash = "/", mustWork = FALSE)
   dir.create(tmp_dir,           recursive = TRUE, showWarnings = FALSE)
   dir.create(dirname(log_file), recursive = TRUE, showWarnings = FALSE)
 
