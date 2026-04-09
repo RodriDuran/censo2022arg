@@ -15,7 +15,7 @@ Verifica si el motor de extraccion esta correctamente preparado para
 trabajar con el Censo 2022. Si no lo esta, muestra las instrucciones
 paso a paso para prepararlo segun su sistema operativo.
 
-\strong{?Por que es necesario este paso?}
+\strong{Por que es necesario este paso?}
 
 El motor REDATAM (distribuido con el paquete \code{redatamx}) tiene
 un limite interno que restringe la extraccion a 100 registros por
@@ -24,11 +24,10 @@ REDATAM, no para la extraccion masiva de microdatos. Para poder
 extraer los 44 millones de registros del censo, es necesario ampliar
 ese limite aplicando una modificacion puntual al archivo del motor.
 
-Esta modificacion es de bajo nivel (un ajuste de 8 bytes en el
-binario compilado) y no afecta ninguna otra funcionalidad del motor
-ni del paquete \code{redatamx}. Debe realizarse una sola vez, y
-puede revertirse en cualquier momento usando la copia de seguridad
-que la funcion indica crear.
+Esta modificacion es de bajo nivel (unos pocos bytes en el binario
+compilado) y no afecta ninguna otra funcionalidad. Debe realizarse
+una sola vez, y puede revertirse en cualquier momento usando la
+copia de seguridad que la funcion indica crear.
 }
 \examples{
 \dontrun{

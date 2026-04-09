@@ -89,7 +89,7 @@ NULL
   cat("    Ayuda\n")
   cat("---------------------------------------------------------------------\n")
   cat("  censo_info()   # ver estado actual de la configuracion\n")
-  cat("  GitHub: []\n")
+  cat("  GitHub:RodriDuran/censo2022arg\n")
   cat("---------------------------------------------------------------------\n")
   cat("\n")
 }
