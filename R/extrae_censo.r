@@ -1,4 +1,4 @@
-# =============================================================================
+h# =============================================================================
 # extrae_censo.R
 # Pipeline de extraccion de microdatos del Censo Nacional 2022 desde REDATAM
 #
@@ -221,19 +221,18 @@ extraer_bloque <- function(dic_path, spc, prov_cod, out_file,
   # Script que se ejecutara en el subproceso
   script <- sprintf('
 suppressMessages(library(redatamx))
-
+suppressMessages(library(censo2022arg))
 tryCatch({
   dic <- redatam_open("%s")
-  rts <- getDLLRegisteredRoutines("redatamx")$".Call"
-  fn  <- rts[["_redatamx_redatam_query_filtered"]]
   # redatam_query_filtered: extrae solo los registros de la provincia indicada
-  df  <- as.data.frame(.Call(fn, dic, "%s", "IDPROV", %dL))
+  df  <- as.data.frame(redatam_query_filtered(dic, "%s", "IDPROV", %dL))
   saveRDS(df, "%s")
   cat("OK", nrow(df), "filas\\n")
 }, error = function(e) {
   cat("ERROR:", conditionMessage(e), "\\n")
   quit(status = 1)
 })
+
 ', dic_path, spc, prov_cod, out_file)
 
   tmp_script <- tempfile(fileext = ".R")
