@@ -214,6 +214,10 @@ extraer_bloque <- function(dic_path, spc, prov_cod, out_file,
     return(TRUE)
   }
 
+  # Normalizar rutas para que sean validas dentro del script del subproceso
+  dic_path <- normalizePath(dic_path, winslash = "/", mustWork = FALSE)
+  out_file <- normalizePath(out_file, winslash = "/", mustWork = FALSE)
+
   # Script que se ejecutara en el subproceso
   script <- sprintf('
 suppressMessages(library(redatamx))
@@ -568,7 +572,7 @@ extraer_redatam <- function(
   on.exit(unlink(tmp_spc), add = TRUE)
   writeLines("AREALIST PROV, IDPROV, NPROV", tmp_spc)
   tmp_prov      <- redatam_run(dic_vp, tmp_spc)
-  prov_raw      <- tmp_prov[[1]]
+  prov_raw      <- if (is.data.frame(tmp_prov)) tmp_prov else tmp_prov[[1]]
   idprov_col    <- names(prov_raw)[grepl("idprov", names(prov_raw), ignore.case = TRUE)][1]
   nprov_col     <- names(prov_raw)[grepl("nprov",  names(prov_raw), ignore.case = TRUE)][1]
   provincias_df <- data.frame(

@@ -121,6 +121,7 @@ extraer_rxdb <- function(
     stop("Archivo no encontrado: ", dic_path)
 
   formato  <- match.arg(formato, c("parquet", "csv"))
+  dic_path <- normalizePath(dic_path, winslash = "/", mustWork = FALSE)
   base_nom <- tools::file_path_sans_ext(basename(dic_path))
 
   # Resolver ruta de salida
@@ -268,7 +269,8 @@ extraer_rxdb <- function(
 suppressMessages(library(redatamx))
 tryCatch({
   dic <- redatam_open("%s")
-  df  <- as.data.frame(redatam_query(dic, "%s")[[1]])
+  res <- redatam_query(dic, "%s")
+  df  <- as.data.frame(if (is.data.frame(res)) res else res[[1]])
   redatam_close(dic)
   saveRDS(df, "%s")
   cat("OK", nrow(df), "filas\\n")

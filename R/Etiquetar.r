@@ -74,10 +74,10 @@ construir_metadatos <- function(dic_path) {
 
       # Para variables enteras, obtener las categorias con FREQ
       if (tipo == "integer") {
-        tbl <- tryCatch(
-          redatam_query(dic, paste0("FREQ ", entidad, ".", vars$name[i]))[[1]],
-          error = function(e) NULL
-        )
+        tbl <- tryCatch({
+          res <- redatam_query(dic, paste0("FREQ ", entidad, ".", vars$name[i]))
+          if (is.data.frame(res)) res else res[[1]]
+        }, error = function(e) NULL)
         if (!is.null(tbl) && nrow(tbl) > 1) {
           tbl <- tbl[!is.na(tbl[[1]]), , drop = FALSE]
           # Limitar a 500 categorias para excluir variables continuas
@@ -131,10 +131,10 @@ construir_metadatos <- function(dic_path) {
       tipo     <- vars$typeName[i]
       var_labels[[nom]] <- etiqueta
       if (tipo == "integer") {
-        tbl <- tryCatch(
-          redatam_query(dic, paste0("FREQ ", entidad, ".", vars$name[i]))[[1]],
-          error = function(e) NULL
-        )
+        tbl <- tryCatch({
+          res <- redatam_query(dic, paste0("FREQ ", entidad, ".", vars$name[i]))
+          if (is.data.frame(res)) res else res[[1]]
+        }, error = function(e) NULL)
         if (!is.null(tbl) && nrow(tbl) > 1) {
           tbl <- tbl[!is.na(tbl[[1]]), , drop = FALSE]
           if (nrow(tbl) <= 500) {
@@ -432,7 +432,7 @@ censo_etiquetar <- function(
 
   # Filtrar por provincia si se especifico
   if (!identical(provincias, "all")) {
-    patron_prov <- paste0("/(", paste(sprintf("%02d", provincias), collapse = "|"), ")_")
+    patron_prov <- paste0("[/\\\\](", paste(sprintf("%02d", provincias), collapse = "|"), ")_")
     archivos <- archivos[grepl(patron_prov, archivos)]
   }
 
