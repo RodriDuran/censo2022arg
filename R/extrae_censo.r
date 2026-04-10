@@ -224,6 +224,7 @@ suppressMessages(library(redatamx))
 suppressMessages(library(censo2022arg))
 tryCatch({
   dic <- redatam_open("%s")
+  on.exit(try(redatam_close(dic), silent = TRUE))
   # redatam_query_filtered: extrae solo los registros de la provincia indicada
   rts <- getDLLRegisteredRoutines("censo2022arg")$".Call"
   fn  <- rts[["_censo2022arg_redatam_query_filtered"]]
@@ -232,7 +233,7 @@ tryCatch({
   cat("OK", nrow(df), "filas\\n")
 }, error = function(e) {
   cat("ERROR:", conditionMessage(e), "\\n")
-  quit(status = 1)
+  stop(conditionMessage(e))
 })
 
 ', dic_path, spc, prov_cod, out_file)
