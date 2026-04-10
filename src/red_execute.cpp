@@ -290,7 +290,11 @@ struct FilteredOutput {
 // El filtrado en el callback es la única forma de evitar cargar los
 // 44 millones de registros del censo en RAM: el motor itera internamente
 // y solo transfiere a R las filas seleccionadas.
-void dataset_filtered_row_handler(int row, int size, int* types, void** data, void* user_data) {
+#ifdef _WIN32
+static void __cdecl dataset_filtered_row_handler(int row, int size, int* types, void** data, void* user_data) {
+#else
+static void dataset_filtered_row_handler(int row, int size, int* types, void** data, void* user_data) {
+#endif
   FilteredOutput* ctx = (FilteredOutput*)user_data;
 
   // Evaluar filtro: descartar fila si no coincide con el valor buscado
