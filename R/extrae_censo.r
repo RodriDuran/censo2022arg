@@ -220,6 +220,9 @@ extraer_bloque <- function(dic_path, spc, prov_cod, out_file,
   # callr garantiza portabilidad en Windows, Linux y Mac sin depender
   # de permisos del sistema para ejecutar scripts temporales.
   ret <- tryCatch({
+    log_msg(paste0("  [RAM libre antes de callr] ",
+                   round(as.numeric(system("awk '/MemAvailable/ {print $2}' /proc/meminfo",
+                                           intern = TRUE)) / 1024), " MB"), log_file)
     resultado <- callr::r(
       func = function(dic_path, spc, prov_cod, out_file) {
         tryCatch({
