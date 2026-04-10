@@ -222,15 +222,19 @@ extraer_bloque <- function(dic_path, spc, prov_cod, out_file,
   ret <- tryCatch({
     callr::r(
       func = function(dic_path, spc, prov_cod, out_file) {
-        suppressMessages(library(redatamx))
-        suppressMessages(library(censo2022arg))
-        dic <- redatam_open(dic_path)
-        on.exit(try(redatam_close(dic), silent = TRUE))
-        rts <- getDLLRegisteredRoutines("censo2022arg")$".Call"
-        fn  <- rts[["_censo2022arg_redatam_query_filtered"]]
-        df  <- as.data.frame(.Call(fn, dic, spc, "IDPROV", prov_cod))
-        saveRDS(df, out_file)
-        nrow(df)
+        tryCatch({
+          suppressMessages(library(redatamx))
+          suppressMessages(library(censo2022arg))
+          dic <- redatam_open(dic_path)
+          on.exit(try(redatam_close(dic), silent = TRUE))
+          rts <- getDLLRegisteredRoutines("censo2022arg")$".Call"
+          fn  <- rts[["_censo2022arg_redatam_query_filtered"]]
+          df  <- as.data.frame(.Call(fn, dic, spc, "IDPROV", prov_cod))
+          saveRDS(df, out_file)
+          nrow(df)
+        }, error = function(e) {
+          stop(paste("ERROR INTERNO:", conditionMessage(e)))
+        })
       },
       args = list(dic_path, spc, prov_cod, out_file)
     )
