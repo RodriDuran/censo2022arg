@@ -237,16 +237,12 @@ tryCatch({
 
 ', dic_path, spc, prov_cod, out_file)
 
-  tmp_script <- tempfile(fileext = ".R", tmpdir = dirname(out_file))
+  tmp_script <- normalizePath(
+    tempfile(fileext = ".R", tmpdir = dirname(out_file)),
+    winslash = "/", mustWork = FALSE
+  )
   on.exit(unlink(tmp_script), add = TRUE)
   writeLines(script, tmp_script)
-
-#####PRUEBA BORRAR
-  cat("=== SCRIPT DEL SUBPROCESO ===\n")
-  cat(readLines(tmp_script), sep = "\n")
-  cat("=== FIN SCRIPT ===\n")
-#####FIN DE PRUEBA BORRAR
-
   output <- system(paste("Rscript", shQuote(tmp_script), "2>&1"), intern = TRUE, wait = TRUE)
   ret    <- attr(output, "status")
   ret    <- if (is.null(ret)) 0L else ret
