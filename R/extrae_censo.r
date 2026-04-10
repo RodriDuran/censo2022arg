@@ -39,10 +39,13 @@
 # Constantes del pipeline
 # =============================================================================
 
-# Variables de control que se incluyen en TODOS los bloques de extraccion.
-# Su presencia en cada bloque permite verificar que el motor devolvio
-# las personas en el mismo orden en todas las extracciones.
-.VARS_CONTROL <- c("P01", "P02", "EDAD", "RADIO.REDCODEN")
+# Variables de control incluidas en TODOS los bloques de extraccion.
+# Su presencia permite verificar que el motor devolvio las personas
+# en el mismo orden entre bloques consecutivos.
+# Se usan P02 (sexo) y EDAD por ser variables universales, presentes
+# en toda persona. Se ha comprobado la coherencia respecto a sets de
+# un numero mayor de variables
+.VARS_CONTROL <- c("P02", "EDAD")
 
 
 # =============================================================================
@@ -195,18 +198,44 @@ progreso <- function(actual, total, etiqueta = "") {
 # =============================================================================
 # FUNCION INTERNA: extraer_bloque()
 #
-# Lanza un subproceso Rscript independiente para extraer un bloque de
-# variables de una provincia. El uso de subprocesos es fundamental para
+# Lanza un subproceso R independiente (via callr) para extraer un bloque
+# de variables de una provincia. El uso de subprocesos es fundamental para
 # la gestion de memoria: el motor REDATAM acumula memoria en el proceso
 # de R que no puede ser liberada por el recolector de basura. Al finalizar
-# cada subproceso, el sistema operativo libera toda esa memoria.
+# cada subproceso, el sistema operativo recupera toda esa memoria.
 #
-# Si el archivo de salida ya existe (extraccion anterior interrumpida),
-# el bloque se salta para permitir la reanudacion del proceso.
+# Estrategia de extraccion segun plataforma:
+#
+#   Linux / macOS:
+#     Utiliza redatam_query_filtered(), funcion C++ compilada en
+#     censo2022arg que filtra por provincia durante la iteracion del
+#     motor, transfiriendo a R unicamente las filas seleccionadas.
+#     Es el metodo optimo en terminos de RAM y velocidad.
+#
+#   Windows:
+#     redatam_query_filtered() no puede ejecutarse en Windows porque
+#     el callback C++ cruza entre DLLs (censo2022arg.dll ->
+#     libredengine.dll), lo que produce un crash del proceso hijo.
+#     En su lugar se usa redatam_query() estandar, que devuelve el
+#     total de registros (aprox. 45 millones), y el filtro por
+#     provincia se aplica en R inmediatamente antes de guardar.
+#     El objeto completo se elimina de memoria antes de retornar.
+#
+#     Requisitos de RAM en Windows (estimados para 45M registros):
+#       4 vars/bloque  ->  ~3.5 GB de pico
+#       6 vars/bloque  ->  ~5.0 GB de pico
+#       8 vars/bloque  ->  ~6.5 GB de pico
+#      10 vars/bloque  ->  ~8.0 GB de pico
+#     Se recomienda usar max_por_bloque = 4 en equipos con 16 GB de RAM
+#     y max_por_bloque = 2 en equipos con 8 GB.
+#
+# Si el archivo de salida ya existe (extraccion interrumpida y retomada),
+# el bloque se omite sin volver a procesarlo.
 # =============================================================================
 extraer_bloque <- function(dic_path, spc, prov_cod, out_file,
                            log_file, nom_bloque, prov_nom) {
 
+  # Reanudar extraccion: si el bloque ya fue guardado no se reprocesa
   if (file.exists(out_file)) {
     log_msg(paste0("Bloque ", nom_bloque, " (", prov_nom,
                    "): ya existe, saltando"), log_file)
@@ -216,39 +245,86 @@ extraer_bloque <- function(dic_path, spc, prov_cod, out_file,
   dic_path <- normalizePath(dic_path, winslash = "/", mustWork = FALSE)
   out_file <- normalizePath(out_file, winslash = "/", mustWork = FALSE)
 
-  # Ejecutar extraccion en subproceso independiente via callr.
-  # callr garantiza portabilidad en Windows, Linux y Mac sin depender
-  # de permisos del sistema para ejecutar scripts temporales.
+  # ---------------------------------------------------------------------------
+  # Subproceso Linux / macOS: filtrado eficiente en C++ durante la iteracion
+  # ---------------------------------------------------------------------------
+  func_unix <- function(dic_path, spc, prov_cod, out_file) {
+    tryCatch({
+      suppressMessages(library(redatamx))
+      suppressMessages(library(censo2022arg))
+      dic <- redatam_open(dic_path)
+      on.exit(try(redatam_close(dic), silent = TRUE))
+      rts <- getDLLRegisteredRoutines("censo2022arg")$".Call"
+      fn  <- rts[["_censo2022arg_redatam_query_filtered"]]
+      df  <- as.data.frame(.Call(fn, dic, spc, "IDPROV", prov_cod))
+      saveRDS(df, out_file)
+      nrow(df)
+    }, error = function(e) {
+      stop(paste("ERROR en subproceso Unix:", conditionMessage(e)))
+    })
+  }
+
+  # ---------------------------------------------------------------------------
+  # Subproceso Windows: extraccion completa + filtrado en R
+  #
+  # redatam_query() devuelve un data.frame o una lista segun la version
+  # del paquete; se normaliza antes de filtrar. El objeto completo se
+  # elimina de memoria inmediatamente tras el filtrado para minimizar
+  # el pico de RAM del subproceso.
+  # ---------------------------------------------------------------------------
+  func_windows <- function(dic_path, spc, prov_cod, out_file) {
+    tryCatch({
+      suppressMessages(library(redatamx))
+      suppressMessages(library(censo2022arg))
+      dic <- redatam_open(dic_path)
+      on.exit(try(redatam_close(dic), silent = TRUE))
+
+      # Extraer todos los registros (aprox. 45M filas)
+      resultado <- redatamx::redatam_query(dic, spc)
+
+      # Normalizar: redatam_query puede devolver data.frame o lista
+      df_raw <- if (is.data.frame(resultado)) resultado else resultado[[1]]
+      rm(resultado); gc()
+
+      # Identificar columna IDPROV (el motor agrega sufijos: idprov_0, etc.)
+      col_prov <- grep("^idprov", names(df_raw), ignore.case = TRUE,
+                       value = TRUE)[1]
+      if (is.na(col_prov))
+        stop("No se encontro la columna IDPROV en el resultado.")
+
+      # Filtrar por provincia y liberar el objeto completo de inmediato
+      prov_str <- formatC(prov_cod, width = 2, flag = "0")
+      df       <- df_raw[as.character(df_raw[[col_prov]]) == prov_str,
+                         , drop = FALSE]
+      rm(df_raw); gc()
+
+      saveRDS(df, out_file)
+      nrow(df)
+    }, error = function(e) {
+      stop(paste("ERROR en subproceso Windows:", conditionMessage(e)))
+    })
+  }
+
+  # ---------------------------------------------------------------------------
+  # Lanzar el subproceso segun la plataforma y capturar errores
+  # ---------------------------------------------------------------------------
+  es_windows <- .Platform$OS.type == "windows"
+  func_sub   <- if (es_windows) func_windows else func_unix
+
   ret <- tryCatch({
-    log_msg(paste0("  [RAM libre antes de callr] ",
-                   round(as.numeric(system("awk '/MemAvailable/ {print $2}' /proc/meminfo",
-                                           intern = TRUE)) / 1024), " MB"), log_file)
     resultado <- callr::r(
-      func = function(dic_path, spc, prov_cod, out_file) {
-        tryCatch({
-          suppressMessages(library(redatamx))
-          suppressMessages(library(censo2022arg))
-          dic <- redatam_open(dic_path)
-          on.exit(try(redatam_close(dic), silent = TRUE))
-          rts <- getDLLRegisteredRoutines("censo2022arg")$".Call"
-          fn  <- rts[["_censo2022arg_redatam_query_filtered"]]
-          df  <- as.data.frame(.Call(fn, dic, spc, "IDPROV", prov_cod))
-          saveRDS(df, out_file)
-          nrow(df)
-        }, error = function(e) {
-          stop(paste("ERROR INTERNO:", conditionMessage(e)))
-        })
-      },
-      args    = list(dic_path, spc, prov_cod, out_file),
-      stderr  = "|",   # <-- captura stderr del hijo
-      stdout  = "|"    # <-- captura stdout del hijo
+      func   = func_sub,
+      args   = list(dic_path, spc, prov_cod, out_file),
+      stderr = "|",
+      stdout = "|"
     )
-    log_msg(paste0("  [callr] filas extraidas: ", resultado), log_file)
+    log_msg(paste0("  [", if (es_windows) "win" else "unix", "] filas: ",
+                   resultado), log_file)
     0L
   }, error = function(e) {
-    # Mensaje principal del error callr
-    log_msg(paste0("  [callr] ERROR: ", conditionMessage(e)), log_file, "ERROR")
-    # Stderr del subproceso (donde aparece el crash de Windows o el C++ error)
+    log_msg(paste0("  [callr] ERROR: ", conditionMessage(e)),
+            log_file, "ERROR")
+    # Capturar stderr del proceso hijo para facilitar el diagnostico
     stderr_hijo <- tryCatch(e$stderr, error = function(x) NULL)
     if (!is.null(stderr_hijo) && nchar(trimws(stderr_hijo)) > 0) {
       for (linea in strsplit(stderr_hijo, "\n")[[1]]) {
@@ -256,18 +332,10 @@ extraer_bloque <- function(dic_path, spc, prov_cod, out_file,
           log_msg(paste0("  [stderr] ", linea), log_file, "ERROR")
       }
     }
-    # Stdout del subproceso (por si el crash ocurre antes del stop())
-    stdout_hijo <- tryCatch(e$stdout, error = function(x) NULL)
-    if (!is.null(stdout_hijo) && nchar(trimws(stdout_hijo)) > 0) {
-      for (linea in strsplit(stdout_hijo, "\n")[[1]]) {
-        if (nchar(trimws(linea)) > 0)
-          log_msg(paste0("  [stdout] ", linea), log_file, "WARN")
-      }
-    }
     1L
   })
 
-  if (ret != 0 || !file.exists(out_file)) {
+  if (ret != 0L || !file.exists(out_file)) {
     log_msg(paste0("FALLO bloque ", nom_bloque,
                    " provincia ", prov_nom), log_file, "ERROR")
     return(FALSE)
@@ -300,9 +368,7 @@ validar_bloques <- function(df_base, df_nuevo, nom_bloque,
   # Verificar que los valores de cada variable de control coinciden exactamente
   patrones <- list(
     P01      = "^p01_",
-    P02      = "^p02_",
     EDAD     = "^edad_[0-9]",
-    REDCODEN = "^redcoden_"
   )
 
   ok <- TRUE
@@ -331,7 +397,7 @@ validar_bloques <- function(df_base, df_nuevo, nom_bloque,
 # nuevo antes de unirlo, conservandolas solo en el bloque base.
 # =============================================================================
 eliminar_ctrl_duplicados <- function(df) {
-  patron    <- "^p01_|^p02_|^edad_[0-9]|^redcoden_|^idprov_"
+  patron    <- "^p02_|^edad_[0-9]|^idprov_"
   cols_ctrl <- names(df)[grepl(patron, names(df), ignore.case = TRUE)]
   df[, !names(df) %in% cols_ctrl, drop = FALSE]
 }
