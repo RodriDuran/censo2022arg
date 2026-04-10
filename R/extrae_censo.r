@@ -207,41 +207,38 @@ progreso <- function(actual, total, etiqueta = "") {
 extraer_bloque <- function(dic_path, spc, prov_cod, out_file,
                            log_file, nom_bloque, prov_nom) {
 
-  # Reanudar extraccion: si el bloque ya existe no se vuelve a procesar
   if (file.exists(out_file)) {
     log_msg(paste0("Bloque ", nom_bloque, " (", prov_nom,
                    "): ya existe, saltando"), log_file)
     return(TRUE)
   }
 
-  # Normalizar rutas para que sean validas dentro del script del subproceso
   dic_path <- normalizePath(dic_path, winslash = "/", mustWork = FALSE)
   out_file <- normalizePath(out_file, winslash = "/", mustWork = FALSE)
 
-  # Script que se ejecutara en el subproceso
-  resultado <- tryCatch({
-    callr::rscript(
-      script = c(
-        'suppressMessages(library(redatamx))',
-        'suppressMessages(library(censo2022arg))',
-        sprintf('dic <- redatam_open("%s")', dic_path),
-        'rts <- getDLLRegisteredRoutines("censo2022arg")$".Call"',
-        'fn  <- rts[["_censo2022arg_redatam_query_filtered"]]',
-        sprintf('df  <- as.data.frame(.Call(fn, dic, "%s", "IDPROV", %dL))', spc, prov_cod),
-        sprintf('saveRDS(df, "%s")', out_file),
-        'cat("OK", nrow(df), "filas\n")'
-      ),
-      show = FALSE,
-      echo = FALSE
+  # Ejecutar extraccion en subproceso independiente via callr.
+  # callr garantiza portabilidad en Windows, Linux y Mac sin depender
+  # de permisos del sistema para ejecutar scripts temporales.
+  ret <- tryCatch({
+    callr::r(
+      func = function(dic_path, spc, prov_cod, out_file) {
+        suppressMessages(library(redatamx))
+        suppressMessages(library(censo2022arg))
+        dic <- redatam_open(dic_path)
+        on.exit(try(redatam_close(dic), silent = TRUE))
+        rts <- getDLLRegisteredRoutines("censo2022arg")$".Call"
+        fn  <- rts[["_censo2022arg_redatam_query_filtered"]]
+        df  <- as.data.frame(.Call(fn, dic, spc, "IDPROV", prov_cod))
+        saveRDS(df, out_file)
+        nrow(df)
+      },
+      args = list(dic_path, spc, prov_cod, out_file)
     )
     0L
   }, error = function(e) {
     log_msg(paste0("  [callr] ERROR: ", conditionMessage(e)), log_file)
     1L
   })
-  ret <- resultado
-
-  for (linea in output) log_msg(paste0("  [Rscript] ", linea), log_file)
 
   if (ret != 0 || !file.exists(out_file)) {
     log_msg(paste0("FALLO bloque ", nom_bloque,
@@ -254,7 +251,6 @@ extraer_bloque <- function(dic_path, spc, prov_cod, out_file,
                  ") - ", sz, " MB en disco"), log_file)
   return(TRUE)
 }
-
 
 # =============================================================================
 # FUNCION INTERNA: validar_bloques()
