@@ -315,8 +315,8 @@ extraer_bloque <- function(dic_path, spc, prov_cod, out_file,
     resultado <- callr::r(
       func   = func_sub,
       args   = list(dic_path, spc, prov_cod, out_file),
-      stderr = "|",
-      stdout = "|"
+      stderr  = NULL,   # NULL evita bloqueo en Windows; en Linux usar "|"
+      stdout  = NULL
     )
     log_msg(paste0("  [", if (es_windows) "win" else "unix", "] filas: ",
                    resultado), log_file)
