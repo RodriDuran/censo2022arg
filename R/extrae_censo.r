@@ -244,6 +244,9 @@ tryCatch({
   )
   on.exit(unlink(tmp_script), add = TRUE)
   writeLines(script, tmp_script)
+  cat("=== SCRIPT DEL SUBPROCESO ===\n")
+  cat(readLines(tmp_script), sep = "\n")
+  cat("=== FIN SCRIPT ===\n")
   output <- system(paste("Rscript", shQuote(tmp_script), "2>&1"), intern = TRUE, wait = TRUE)
   ret    <- attr(output, "status")
   ret    <- if (is.null(ret)) 0L else ret
