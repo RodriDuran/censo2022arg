@@ -220,7 +220,7 @@ extraer_bloque <- function(dic_path, spc, prov_cod, out_file,
   # callr garantiza portabilidad en Windows, Linux y Mac sin depender
   # de permisos del sistema para ejecutar scripts temporales.
   ret <- tryCatch({
-    callr::r(
+    resultado <- callr::r(
       func = function(dic_path, spc, prov_cod, out_file) {
         tryCatch({
           suppressMessages(library(redatamx))
@@ -236,11 +236,31 @@ extraer_bloque <- function(dic_path, spc, prov_cod, out_file,
           stop(paste("ERROR INTERNO:", conditionMessage(e)))
         })
       },
-      args = list(dic_path, spc, prov_cod, out_file)
+      args    = list(dic_path, spc, prov_cod, out_file),
+      stderr  = "|",   # <-- captura stderr del hijo
+      stdout  = "|"    # <-- captura stdout del hijo
     )
+    log_msg(paste0("  [callr] filas extraidas: ", resultado), log_file)
     0L
   }, error = function(e) {
-    log_msg(paste0("  [callr] ERROR: ", conditionMessage(e)), log_file)
+    # Mensaje principal del error callr
+    log_msg(paste0("  [callr] ERROR: ", conditionMessage(e)), log_file, "ERROR")
+    # Stderr del subproceso (donde aparece el crash de Windows o el C++ error)
+    stderr_hijo <- tryCatch(e$stderr, error = function(x) NULL)
+    if (!is.null(stderr_hijo) && nchar(trimws(stderr_hijo)) > 0) {
+      for (linea in strsplit(stderr_hijo, "\n")[[1]]) {
+        if (nchar(trimws(linea)) > 0)
+          log_msg(paste0("  [stderr] ", linea), log_file, "ERROR")
+      }
+    }
+    # Stdout del subproceso (por si el crash ocurre antes del stop())
+    stdout_hijo <- tryCatch(e$stdout, error = function(x) NULL)
+    if (!is.null(stdout_hijo) && nchar(trimws(stdout_hijo)) > 0) {
+      for (linea in strsplit(stdout_hijo, "\n")[[1]]) {
+        if (nchar(trimws(linea)) > 0)
+          log_msg(paste0("  [stdout] ", linea), log_file, "WARN")
+      }
+    }
     1L
   })
 
