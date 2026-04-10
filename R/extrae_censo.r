@@ -368,7 +368,7 @@ validar_bloques <- function(df_base, df_nuevo, nom_bloque,
   # Verificar que los valores de cada variable de control coinciden exactamente
   patrones <- list(
     P01      = "^p01_",
-    EDAD     = "^edad_[0-9]",
+    EDAD     = "^edad_[0-9]"
   )
 
   ok <- TRUE
