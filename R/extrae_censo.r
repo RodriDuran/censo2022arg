@@ -239,7 +239,7 @@ tryCatch({
 ', dic_path, spc, prov_cod, out_file)
 
   tmp_script <- normalizePath(
-    tempfile(fileext = ".R", tmpdir = dirname(out_file)),
+    file.path(dirname(out_file), paste0("script_", nom_bloque, ".R")),
     winslash = "/", mustWork = FALSE
   )
   on.exit(unlink(tmp_script), add = TRUE)
