@@ -27,6 +27,7 @@ Depends:
     R (>= 4.1.0)
 Imports:
     redatamx,
+    callr (>= 3.7.0),
     arrow,
     data.table,
     haven,

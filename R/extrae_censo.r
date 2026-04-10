@@ -219,37 +219,27 @@ extraer_bloque <- function(dic_path, spc, prov_cod, out_file,
   out_file <- normalizePath(out_file, winslash = "/", mustWork = FALSE)
 
   # Script que se ejecutara en el subproceso
-  script <- sprintf('
-suppressMessages(library(redatamx))
-suppressMessages(library(censo2022arg))
-tryCatch({
-  dic <- redatam_open("%s")
-  on.exit(try(redatam_close(dic), silent = TRUE))
-  # redatam_query_filtered: extrae solo los registros de la provincia indicada
-  rts <- getDLLRegisteredRoutines("censo2022arg")$".Call"
-  fn  <- rts[["_censo2022arg_redatam_query_filtered"]]
-  df  <- as.data.frame(.Call(fn, dic, "%s", "IDPROV", %dL))
-  saveRDS(df, "%s")
-  cat("OK", nrow(df), "filas\\n")
-}, error = function(e) {
-  cat("ERROR:", conditionMessage(e), "\\n")
-  stop(conditionMessage(e))
-})
-
-', dic_path, spc, prov_cod, out_file)
-
-  tmp_script <- normalizePath(
-    file.path(dirname(out_file), paste0("script_", nom_bloque, ".R")),
-    winslash = "/", mustWork = FALSE
-  )
-  on.exit(unlink(tmp_script), add = TRUE)
-  writeLines(script, tmp_script)
-  cat("=== SCRIPT DEL SUBPROCESO ===\n")
-  cat(readLines(tmp_script), sep = "\n")
-  cat("=== FIN SCRIPT ===\n")
-  output <- system(paste("Rscript", shQuote(tmp_script), "2>&1"), intern = TRUE, wait = TRUE)
-  ret    <- attr(output, "status")
-  ret    <- if (is.null(ret)) 0L else ret
+  resultado <- tryCatch({
+    callr::rscript(
+      script = c(
+        'suppressMessages(library(redatamx))',
+        'suppressMessages(library(censo2022arg))',
+        sprintf('dic <- redatam_open("%s")', dic_path),
+        'rts <- getDLLRegisteredRoutines("censo2022arg")$".Call"',
+        'fn  <- rts[["_censo2022arg_redatam_query_filtered"]]',
+        sprintf('df  <- as.data.frame(.Call(fn, dic, "%s", "IDPROV", %dL))', spc, prov_cod),
+        sprintf('saveRDS(df, "%s")', out_file),
+        'cat("OK", nrow(df), "filas\n")'
+      ),
+      show = FALSE,
+      echo = FALSE
+    )
+    0L
+  }, error = function(e) {
+    log_msg(paste0("  [callr] ERROR: ", conditionMessage(e)), log_file)
+    1L
+  })
+  ret <- resultado
 
   for (linea in output) log_msg(paste0("  [Rscript] ", linea), log_file)
 
