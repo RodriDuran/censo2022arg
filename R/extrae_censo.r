@@ -687,8 +687,8 @@ extraer_redatam <- function(
   vars_po_exc <- c("P01", "P02", "EDAD", "TOTPOBV", "TOTPOBH", "V06",
                    "IDPROV", "IDPTO", "IDFRAC", "IDRADIO")
   vars_po_add <- setdiff(vars_po_all, vars_po_exc)  # solo las 6 variables adicionales
-  spc_po      <- paste("TABLE VIEW PERSONA",
-                       paste(c(.VARS_CONTROL, vars_po_add), collapse = ", "))
+  spc_po <- paste("TABLE VIEW PERSONA",
+                  paste(c(.VARS_CONTROL, "IDPROV", vars_po_add), collapse = ", "))
   redatam_close(dic_po_tmp); rm(dic_po_tmp)
 
   # Preparar consulta para la Base VC (viviendas colectivas)
