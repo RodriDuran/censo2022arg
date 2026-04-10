@@ -225,7 +225,9 @@ suppressMessages(library(censo2022arg))
 tryCatch({
   dic <- redatam_open("%s")
   # redatam_query_filtered: extrae solo los registros de la provincia indicada
-  df  <- as.data.frame(censo2022arg:::redatam_query_filtered(dic, "%s", "IDPROV", %dL))
+  rts <- getDLLRegisteredRoutines("censo2022arg")$".Call"
+  fn  <- rts[["_censo2022arg_redatam_query_filtered"]]
+  df  <- as.data.frame(.Call(fn, dic, "%s", "IDPROV", %dL))
   saveRDS(df, "%s")
   cat("OK", nrow(df), "filas\\n")
 }, error = function(e) {
