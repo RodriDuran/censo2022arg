@@ -237,7 +237,7 @@ tryCatch({
 
 ', dic_path, spc, prov_cod, out_file)
 
-  tmp_script <- tempfile(fileext = ".R")
+  tmp_script <- tempfile(fileext = ".R", tmpdir = dirname(out_file))
   on.exit(unlink(tmp_script), add = TRUE)
   writeLines(script, tmp_script)
 
