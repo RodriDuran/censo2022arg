@@ -338,10 +338,17 @@ censo_rxdb_vc <- function() file.path(censo_dir_vc(), "cpv2022col.rxdb")
 #' @keywords internal
 censo_xls_vp <- function() file.path(censo_dir_dicc(),
                                      "c2022-diccionario_viviendas_particulares.xlsx")
-
 #' @keywords internal
-censo_xls_vc <- function() file.path(censo_dir_dicc(),
-                                     "c2022-diccionario_viviendas_colectivas_poblacion_situacion_calle.xlsx")
+# La funcion busca ambas variantes del nombre porque el archivo puede
+# tener tildes (descarga manual) o no (descarga via censo_descargar(),
+# que normaliza los nombres desde la codificacion CP850 del ZIP del INDEC).
+censo_xls_vc <- function() {
+  sin_tilde <- file.path(censo_dir_dicc(),
+                         "c2022-diccionario_viviendas_colectivas_poblacion_situacion_calle.xlsx")
+  con_tilde <- file.path(censo_dir_dicc(),
+                         "c2022-diccionario_viviendas_colectivas_poblaci\u00f3n_situaci\u00f3n_calle.xlsx")
+  if (file.exists(sin_tilde)) sin_tilde else con_tilde
+}
 
 #' @keywords internal
 censo_xls_po <- function() file.path(censo_dir_dicc(),
