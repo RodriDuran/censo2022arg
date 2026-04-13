@@ -250,13 +250,14 @@ extraer_bloque <- function(dic_path, spc, prov_cod, out_file,
   # ---------------------------------------------------------------------------
   func_unix <- function(dic_path, spc, prov_cod, out_file) {
     tryCatch({
-      suppressMessages(library(redatamx))
-      suppressMessages(library(censo2022arg))
-      dic <- redatam_open(dic_path)
-      on.exit(try(redatam_close(dic), silent = TRUE))
-      rts <- getDLLRegisteredRoutines("censo2022arg")$".Call"
-      fn  <- rts[["_censo2022arg_redatam_query_filtered"]]
-      df  <- as.data.frame(.Call(fn, dic, spc, "IDPROV", prov_cod))
+      if (!requireNamespace("redatamx",    quietly = TRUE)) stop("Paquete 'redatamx' no disponible.")
+      if (!requireNamespace("censo2022arg", quietly = TRUE)) stop("Paquete 'censo2022arg' no disponible.")
+      dic <- redatamx::redatam_open(dic_path)
+      on.exit(try(redatamx::redatam_close(dic), silent = TRUE))
+      df <- as.data.frame(.Call(
+        getDLLRegisteredRoutines("censo2022arg")$".Call"[["_censo2022arg_redatam_query_filtered"]],
+        dic, spc, "IDPROV", prov_cod
+      ))
       saveRDS(df, out_file)
       nrow(df)
     }, error = function(e) {
@@ -274,10 +275,10 @@ extraer_bloque <- function(dic_path, spc, prov_cod, out_file,
   # ---------------------------------------------------------------------------
   func_windows <- function(dic_path, spc, prov_cod, out_file) {
     tryCatch({
-      suppressMessages(library(redatamx))
-      suppressMessages(library(censo2022arg))
-      dic <- redatam_open(dic_path)
-      on.exit(try(redatam_close(dic), silent = TRUE))
+      if (!requireNamespace("redatamx",    quietly = TRUE)) stop("Paquete 'redatamx' no disponible.")
+      if (!requireNamespace("censo2022arg", quietly = TRUE)) stop("Paquete 'censo2022arg' no disponible.")
+      dic <- redatamx::redatam_open(dic_path)
+      on.exit(try(redatamx::redatam_close(dic), silent = TRUE))
 
       # Extraer todos los registros (aprox. 45M filas)
       resultado <- redatamx::redatam_query(dic, spc)
