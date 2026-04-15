@@ -122,7 +122,7 @@ censo_leer <- function(
 
   # Resolver el directorio de provincias
   if (is.null(dir)) dir <- censo_dir()
-  dir_prov <- file.path(dir, "provincias")
+  dir_prov <- file.path(dir, "microdatos", "provincias")
   if (!dir.exists(dir_prov))
     stop("Directorio de provincias no encontrado: ", dir_prov,
          "\nVerifique la configuracion con censo_info().")
@@ -181,8 +181,8 @@ censo_leer <- function(
   # Informar sobre archivos no encontrados (provincias sin esa base)
   faltantes <- archivos[!file.exists(archivos)]
   if (length(faltantes) > 0) {
-    cat("[AVISO] Archivos no encontrados (se omitiran):\n")
-    for (f in faltantes) cat("  -", basename(f), "\n")
+    message("[AVISO] Archivos no encontrados (se omitiran):")
+    for (f in faltantes) message("  -", basename(f))
     archivos <- archivos[file.exists(archivos)]
   }
   if (length(archivos) == 0)
@@ -207,7 +207,7 @@ censo_leer <- function(
   }
 
   # ---- Leer y combinar provincias ------------------------------------------
-  cat("[INFO] Leyendo", length(archivos), "provincia(s)...\n")
+  message("[INFO] Leyendo ", length(archivos), " provincia(s)...")
 
   lista <- vector("list", length(archivos))
 
@@ -217,7 +217,7 @@ censo_leer <- function(
     if (base == "colectivas")
       prov_nom <- sub("^[0-9]+_", "", basename(dirname(dirname(arch))))
 
-    cat(sprintf("[INFO]  (%d/%d) %s\n", k, length(archivos), prov_nom))
+    message(sprintf("[INFO]  (%d/%d) %s", k, length(archivos), prov_nom))
 
     # Abrir el dataset de forma lazy (sin cargar en RAM todavia)
     ds <- arrow::open_dataset(arch)
@@ -234,8 +234,8 @@ censo_leer <- function(
       cols_validas     <- columnas[columnas %in% cols_disponibles]
       cols_faltantes   <- columnas[!columnas %in% cols_disponibles]
       if (length(cols_faltantes) > 0)
-        cat("[AVISO] Columnas no encontradas:",
-            paste(cols_faltantes, collapse = ", "), "\n")
+        message("[AVISO] Columnas no encontradas:",
+            paste(cols_faltantes, collapse = ", "))
       if (length(cols_validas) > 0)
         ds <- dplyr::select(ds, dplyr::all_of(cols_validas))
     }
@@ -246,12 +246,12 @@ censo_leer <- function(
   }
 
   # Combinar todas las provincias en un unico objeto
-  cat("[INFO] Combinando provincias...\n")
+  message("[INFO] Combinando provincias...")
   df <- do.call(rbind, lista)
   rm(lista); gc()
 
-  cat("[INFO] Total cargado:", format(nrow(df), big.mark = ","),
-      "filas x", ncol(df), "columnas\n")
+  message("[INFO] Total cargado:", format(nrow(df), big.mark = ","),
+      "filas x", ncol(df), "columnas")
 
   # Convertir al formato solicitado
   if (formato == "data.table") {

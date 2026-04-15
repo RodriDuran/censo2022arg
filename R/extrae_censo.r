@@ -173,7 +173,7 @@ reconstruir_ids <- function(df) {
 # =============================================================================
 log_msg <- function(msg, log_file, nivel = "INFO") {
   linea <- paste0("[", format(Sys.time(), "%H:%M:%S"), "] [", nivel, "] ", msg)
-  cat(linea, "\n")
+  message(linea)
   cat(linea, "\n", file = log_file, append = TRUE)
 }
 
@@ -576,22 +576,14 @@ separar_bases <- function(df_completo, prov_dir, prov_nom,
 #'
 #' @examples
 #' \dontrun{
-#' # Extraer todas las provincias (configuracion automatica de rutas)
+#' # Extraer todas las provincias
 #' extraer_redatam()
 #'
-#' # Extraer solo Formosa para probar
+#' # Solo Formosa (prueba rapida)
 #' extraer_redatam(provincias = 34)
 #'
-#' # Extraer varias provincias
-#' extraer_redatam(provincias = c(34, 66, 54))
-#'
-#' # Con rutas propias (sin usar censo_configurar)
-#' extraer_redatam(
-#'   dic_path_vp = "/mi/ruta/Base_VP/cpv2022.rxdb",
-#'   dic_path_po = "/mi/ruta/Base_PO/cpv2022.rxdb",
-#'   dic_path_vc = "/mi/ruta/Base_VC/cpv2022col.rxdb",
-#'   output_dir  = "/mi/ruta/microdatos/"
-#' )
+#' # Salta y Jujuy, exportando tambien a CSV
+#' extraer_redatam(provincias = c(66, 38), formatos = c("parquet", "csv"))
 #' }
 #'
 #' @seealso

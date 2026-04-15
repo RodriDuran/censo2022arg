@@ -1,48 +1,60 @@
-## Resubmission
+## Resubmission (2nd)
 
-This is a resubmission. Changes based on CRAN feedback:
+This is a second resubmission addressing all points raised by Benjamin Altmann.
 
-* Removed non-standard 'DOI' field from DESCRIPTION
-* Added DOI citation inline in the Description field following the form
-  Authors (year) <doi:10.xxxxx/zenodo.xxxxxxx>
+### Response to reviewer comments
 
-## Package description
+**1. English translation of Description**
+Added. The Description field is now in English. The Title field was also
+translated to English for consistency.
 
-This package allows extracting, labeling and reading microdata from the
-2022 National Population, Households and Housing Census of Argentina from
-the REDATAM databases officially distributed by INDEC (Argentina's National
-Institute of Statistics and Census).
+**2. Missing \value tag in censo_descargar.Rd**
+Added \value documenting that the function returns invisible NULL and is
+called for its side effects.
 
-The package depends on `redatamx` (available on CRAN), which provides the
-R interface to the REDATAM engine developed by CELADE (CEPAL - United
-Nations). The REDATAM engine is a closed-source binary freely distributed
-by CELADE and included in the `redatamx` package. This package does not
-distribute the engine nor modify its source code.
+**3. \dontrun{} replaced by \donttest{}**
+Done for all functions where examples can in principle be executed:
+censo_configurar(), censo_verificar_engine(), and censo_info().
 
-Census data is not distributed with the package. Users download it
-directly from the official INDEC portal (https://www.indec.gob.ar).
+Functions that require external census data files (~500 MB) downloaded
+directly from INDEC (Argentina's national statistics office) under Law
+17.622 on statistical secrecy retain \dontrun{}: censo_descargar(),
+censo_etiquetar(), censo_leer(), extraer_redatam(), and extraer_rxdb().
+These files cannot be redistributed or included in the package. This
+matches the intended use of \dontrun{} per CRAN policy.
+
+**4. print()/cat() replaced by message()**
+All informational console output now uses message() throughout the package,
+allowing suppression via suppressMessages(). Exceptions retained as cat():
+- Interactive readline() prompts (message() breaks readline() behavior)
+- Progress bars using \r (message() does not support carriage return)
+- Script output captured via intern = TRUE in system() calls (message()
+  writes to stderr, breaking capture)
+
+**5. Writing to user home filespace**
+censo_configurar() no longer has a default path. The dir argument is now
+required. Examples use tempdir() for the executable example, with real
+paths shown as comments only.
+
+**6. Authors, contributors and copyright holders in Authors@R**
+Added Jaime Salvador (ctb) as contributor for red_execute.cpp,
+red_initialize.cpp and redengine_c.h, which are derived from the redatamx
+package. Added CELADE (cph) as copyright holder of the REDATAM engine.
 
 ## R CMD check results
 
 0 errors | 0 warnings | 1 note
 
-* checking compilation flags used: NOTE
-  Compilation used the following non-portable flag(s):
-  '-Werror=format-security' '-Wp,-D_GLIBCXX_ASSERTIONS'
-  '-Wp,-U_FORTIFY_SOURCE,-D_FORTIFY_SOURCE=3' '-march=x86-64'
-  '-mno-omit-leaf-frame-pointer' '-mtls-dialect=gnu2'
-
-  These flags are imposed by the Fedora Linux 43 system compiler
-  (GCC 15.2.1, Red Hat) and are not set in the package Makevars.
-  They do not affect portability or functionality on other platforms.
+* checking for future file timestamps: NOTE
+  Unable to verify current time. This is a connectivity issue on the
+  check server and is unrelated to the package.
 
 ## Test environments
 
 * Fedora Linux 43, R 4.5.2
+* Windows 10, R 4.5.2
 * GitHub Actions: ubuntu-latest, R release (via r-lib/actions)
-* Windows (win-builder), R 4.6.0 alpha
-* macOS: not tested due to R-hub service unavailability at submission time.
 
 ## Downstream dependencies
 
-None. This is a resubmission.
+None.

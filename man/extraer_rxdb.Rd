@@ -76,7 +76,7 @@ solo une los bloques leidos desde disco.
 }
 \examples{
 \dontrun{
-# Uso basico
+# Uso basico: convertir cualquier base .rxdb a parquet
 extraer_rxdb(
   dic_path    = "/ruta/a/base.rxdb",
   output_file = "/ruta/salida/microdatos.parquet"

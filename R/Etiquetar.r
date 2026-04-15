@@ -160,13 +160,13 @@ cat("OK", length(meta$var_labels), "variables\\n")
   on.exit(unlink(tmp_script), add = TRUE)
   writeLines(script, tmp_script)
   output <- system(paste("Rscript", shQuote(tmp_script), "2>&1"), intern = TRUE, wait = TRUE)
-  for (linea in output) cat("[INFO]  [meta]", linea, "\n")
+  for (linea in output) message("[INFO]  [meta] ", linea)
 
   ret <- attr(output, "status")
   ret <- if (is.null(ret)) 0L else ret
 
   if (ret != 0 || !file.exists(out_file)) {
-    cat("[ERROR] No se pudieron construir los metadatos desde:", dic_path, "\n")
+    message("[ERROR] No se pudieron construir los metadatos desde:", dic_path)
     return(NULL)
   }
 
@@ -259,8 +259,8 @@ construir_metadatos_xls <- function(xls_path) {
     )
   }
 
-  cat("[INFO]  XLS procesado:", length(var_labels), "variables,",
-      length(val_labels), "con categorias\n")
+  message("[INFO]  XLS procesado:", length(var_labels), "variables,",
+      length(val_labels), "con categorias")
 
   list(var_labels = var_labels, val_labels = val_labels)
 }
@@ -369,42 +369,42 @@ censo_etiquetar <- function(
 
     # Fuente XLS: rapida y sin costo de RAM adicional
     if (file.exists(xls_path_vp)) {
-      cat("[INFO] Cargando metadatos VP desde XLS...\n")
+      message("[INFO] Cargando metadatos VP desde XLS...")
       meta_vp <- construir_metadatos_xls(xls_path_vp)
     } else {
-      cat("[AVISO] Diccionario VP (XLS) no encontrado. Ejecute censo_descargar().\n")
+      message("[AVISO] Diccionario VP (XLS) no encontrado. Ejecute censo_descargar().")
     }
 
     if (file.exists(xls_path_vc)) {
-      cat("[INFO] Cargando metadatos VC desde XLS...\n")
+      message("[INFO] Cargando metadatos VC desde XLS...")
       meta_vc <- construir_metadatos_xls(xls_path_vc)
     } else {
-      cat("[AVISO] Diccionario VC (XLS) no encontrado. Ejecute censo_descargar().\n")
+      message("[AVISO] Diccionario VC (XLS) no encontrado. Ejecute censo_descargar().")
     }
 
   } else {
 
     # Fuente REDATAM: extrae etiquetas del motor en subproceso
     if (file.exists(dic_path_vp)) {
-      cat("[INFO] Extrayendo metadatos VP desde REDATAM (puede demorar)...\n")
+      message("[INFO] Extrayendo metadatos VP desde REDATAM (puede demorar)...")
       tmp_meta_vp <- tempfile(fileext = ".rds")
       meta_vp <- construir_metadatos_subprocess(dic_path_vp, tmp_meta_vp)
       if (!is.null(meta_vp))
-        cat("[INFO] VP:", length(meta_vp$var_labels), "variables,",
-            length(meta_vp$val_labels), "con categorias\n")
+        message("[INFO] VP: ", length(meta_vp$var_labels), " variables, ",
+                length(meta_vp$val_labels), " con categorias")
     } else {
-      cat("[AVISO] Base VP no encontrada. Ejecute censo_descargar().\n")
+      message("[AVISO] Base VP no encontrada. Ejecute censo_descargar().")
     }
 
     if (file.exists(dic_path_vc)) {
-      cat("[INFO] Extrayendo metadatos VC desde REDATAM (puede demorar)...\n")
+      message("[INFO] Extrayendo metadatos VC desde REDATAM (puede demorar)...")
       tmp_meta_vc <- tempfile(fileext = ".rds")
       meta_vc <- construir_metadatos_subprocess(dic_path_vc, tmp_meta_vc)
       if (!is.null(meta_vc))
-        cat("[INFO] VC:", length(meta_vc$var_labels), "variables,",
-            length(meta_vc$val_labels), "con categorias\n")
+        message("[INFO] VC: ", length(meta_vc$var_labels), " variables, ",
+                length(meta_vc$val_labels), " con categorias")
     } else {
-      cat("[AVISO] Base VC no encontrada. Ejecute censo_descargar().\n")
+      message("[AVISO] Base VC no encontrada. Ejecute censo_descargar().")
     }
   }
 
@@ -437,18 +437,18 @@ censo_etiquetar <- function(
   }
 
   if (length(archivos) == 0) {
-    cat("[AVISO] No se encontraron archivos para etiquetar.\n")
-    cat("[INFO]  Verifique que los microdatos fueron extraidos con extraer_redatam().\n")
+    message("[AVISO] No se encontraron archivos para etiquetar.")
+    message("[INFO]  Verifique que los microdatos fueron extraidos con extraer_redatam().")
     return(invisible(NULL))
   }
 
-  cat("[INFO] Archivos a etiquetar:", length(archivos), "\n")
+  message("[INFO] Archivos a etiquetar:", length(archivos))
   n_ok      <- 0L
   n_omitido <- 0L
 
   # ---- Procesar cada archivo -----------------------------------------------
   for (arch in archivos) {
-    cat("[INFO] Etiquetando:", basename(arch), "\n")
+    message("[INFO] Etiquetando:", basename(arch))
     ext <- tolower(tools::file_ext(arch))
 
     # Las viviendas colectivas usan el diccionario VC; el resto usa VP
@@ -456,7 +456,7 @@ censo_etiquetar <- function(
     meta <- if (es_colectiva && !is.null(meta_vc)) meta_vc else meta_vp
 
     if (is.null(meta)) {
-      cat("[AVISO]  Sin metadatos para:", basename(arch), "- omitido\n")
+      message("[AVISO]  Sin metadatos para:", basename(arch), "- omitido")
       n_omitido <- n_omitido + 1L
       next
     }
@@ -477,7 +477,7 @@ censo_etiquetar <- function(
       }
 
       if (ya_etiquetado) {
-        cat("[INFO]  Ya etiquetado, omitiendo:", basename(arch), "\n")
+        message("[INFO]  Ya etiquetado, omitiendo:", basename(arch))
         next
       }
 
@@ -498,7 +498,7 @@ censo_etiquetar <- function(
       }
 
       if (is.null(df) || nrow(df) == 0) {
-        cat("[INFO]  Archivo vacio, omitiendo:", basename(arch), "\n")
+        message("[INFO]  Archivo vacio, omitiendo:", basename(arch))
         next
       }
 
@@ -546,21 +546,21 @@ censo_etiquetar <- function(
       }
 
       n_ok <- n_ok + 1L
-      cat("[INFO]  OK:", basename(arch), "\n")
+      message("[INFO]  OK:", basename(arch))
 
     }, error = function(e) {
-      cat("[ERROR]", basename(arch), ":", conditionMessage(e), "\n")
+      message("[ERROR]", basename(arch), ":", conditionMessage(e))
     })
   }
 
   # ---- Resumen final -------------------------------------------------------
   if (n_omitido == length(archivos)) {
-    cat("[AVISO] Ningun archivo fue etiquetado.\n")
-    cat("[INFO]  Verifique que los diccionarios estan disponibles con censo_info().\n")
+    message("[AVISO] Ningun archivo fue etiquetado.")
+    message("[INFO]  Verifique que los diccionarios estan disponibles con censo_info().")
   } else if (n_omitido > 0) {
-    cat("[INFO] Proceso completado -", n_ok, "etiquetados,", n_omitido, "omitidos\n")
+    message("[INFO] Proceso completado -", n_ok, "etiquetados,", n_omitido, "omitidos")
   } else {
-    cat("[INFO] Proceso completado -", n_ok, "archivo(s) etiquetado(s)\n")
+    message("[INFO] Proceso completado -", n_ok, "archivo(s) etiquetado(s)")
   }
 
   invisible(NULL)

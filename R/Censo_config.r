@@ -138,9 +138,9 @@ NULL
 #' Al ejecutarse, la funcion crea automaticamente la estructura de
 #' carpetas necesaria y copia los archivos de control oficial del INDEC.
 #'
-#' @param dir Ruta al directorio raiz de datos. Si no se especifica,
-#'   se usa la ubicacion por defecto del sistema
-#'   (\code{tools::R_user_dir("censo2022arg", "cache")}).
+#' @param dir Ruta al directorio raiz donde se guardaran todos los archivos
+#'   del censo. Debe ser elegida por el usuario; el paquete no asume ninguna
+#'   ubicacion por defecto.
 #' @param persistent Logico. Si \code{TRUE}, guarda la configuracion en
 #'   \code{.Rprofile} para que el directorio quede disponible en todas
 #'   las sesiones futuras sin necesidad de volver a configurar.
@@ -149,7 +149,7 @@ NULL
 #' @return La ruta configurada (invisible).
 #'
 #' @examples
-#' \dontrun{
+#' \donttest{
 #' # Configurar para esta sesion unicamente
 #' censo_configurar("/home/usuario/mis_datos/censo2022")
 #'
@@ -161,23 +161,31 @@ NULL
 #'
 #' # En un disco externo (Mac/Linux)
 #' censo_configurar("/Volumes/MiDisco/Censo2022", persistent = TRUE)
+#'
+#' # Ejemplo ejecutable:
+#' old <- getOption("censo2022.dir")
+#' censo_configurar(tempdir())
+#' options(censo2022.dir = old)  # restaurar estado anterior
 #' }
 #'
 #' @seealso \code{\link{censo_info}}, \code{\link{censo_descargar}},
 #'   \code{\link{censo_verificar_engine}}
 #' @export
 censo_configurar <- function(
-    dir        = NULL,
+    dir,
     persistent = FALSE
 ) {
   .censo_bienvenida()
 
-  # Si no se especifica directorio, usar la ubicacion estandar del sistema
-  if (is.null(dir)) {
-    dir <- tools::R_user_dir("censo2022arg", which = "cache")
-    cat("[INFO] No se especifico directorio. Usando ubicacion por defecto:\n")
-    cat("[INFO]", dir, "\n\n")
-  }
+  # Validar que el usuario proporcionó una ruta explícita.
+  # CRAN no permite que los paquetes escriban en el sistema de archivos
+  # del usuario sin una eleccion explicita de ruta.
+  if (missing(dir) || is.null(dir) || !nzchar(trimws(dir)))
+    stop(
+      "Debe especificar el directorio donde guardar los datos del censo.\n",
+      "Ejemplo: censo_configurar('/mi/ruta/censo2022')\n",
+      "Elija cualquier ubicacion con espacio suficiente (recomendado: 15 GB)."
+    )
 
   # Normalizar la ruta (resolver ~, ., .., etc.)
   dir <- normalizePath(dir, mustWork = FALSE)
@@ -209,13 +217,13 @@ censo_configurar <- function(
     if (!file.exists(destino)) {
       tryCatch(
         file.copy(.censo_extdata(csv), destino),
-        error = function(e) cat("[WARN]  No se pudo copiar:", csv, "\n")
+        error = function(e) message("[WARN]  No se pudo copiar:", csv)
       )
     }
   }
 
-  cat("[OK]  Directorio configurado:\n")
-  cat("      ", dir, "\n\n")
+  message("[OK]  Directorio configurado:\n      ", dir)
+
 
   # Persistencia entre sesiones
   if (persistent) {
@@ -230,24 +238,27 @@ censo_configurar <- function(
       writeLines(contenido, rprofile)
     }
     cat(linea, file = rprofile, append = TRUE)
-    cat("[OK]  Configuracion guardada. El directorio estara disponible\n")
-    cat("      en todas las sesiones futuras sin necesidad de reconfigurar.\n\n")
+    message("[OK]  Configuracion guardada. El directorio estara disponible",
+            "\n      en todas las sesiones futuras sin necesidad de reconfigurar.")
+
   } else {
-    cat("[!]   Esta configuracion es valida solo para la sesion actual.\n")
-    cat("      Para que persista entre sesiones, ejecuta:\n\n")
-    cat("        censo_configurar('", dir, "', persistent = TRUE)\n\n", sep = "")
+    message("[!]   Esta configuracion es valida solo para la sesion actual.",
+            "\n      Para que persista entre sesiones, ejecuta:",
+            "\n\n        censo_configurar('", dir, "', persistent = TRUE)", sep = "")
   }
 
   # Orientar al usuario sobre el siguiente paso
   if (!file.exists(file.path(dir, "bases", "Base_VP", "cpv2022.rxdb"))) {
-    cat("-- Proximo paso --------------------------------------------------\n")
-    cat("  Las bases del censo no estan en el directorio configurado.\n\n")
-    cat("  Para descargarlas automaticamente desde el INDEC:\n\n")
-    cat("    censo_descargar()\n\n")
-    cat("  Si ya las descargo manualmente, puede usarlas sin moverlas\n")
-    cat("  pasando las rutas directamente a extraer_redatam().\n")
-    cat("  Consulte: ?extraer_redatam\n")
-    cat("-----------------------------------------------------------------\n\n")
+    message(
+      "-- Proximo paso --------------------------------------------------\n",
+      "  Las bases del censo no estan en el directorio configurado.\n\n",
+      "  Para descargarlas automaticamente desde el INDEC:\n\n",
+      "    censo_descargar()\n\n",
+      "  Si ya las descargo manualmente, puede usarlas sin moverlas\n",
+      "  pasando las rutas directamente a extraer_redatam().\n",
+      "  Consulte: ?extraer_redatam\n",
+      "-----------------------------------------------------------------"
+    )
   }
 
   invisible(dir)
@@ -402,7 +413,7 @@ censo_xls_po <- function() file.path(censo_dir_dicc(),
 #'   si requiere preparacion.
 #'
 #' @examples
-#' \dontrun{
+#' \donttest{
 #' censo_verificar_engine()
 #' }
 #'
@@ -561,8 +572,10 @@ censo_verificar_engine <- function() {
 #'   si no hay configuracion activa.
 #'
 #' @examples
-#' \dontrun{
-#' censo_info()
+#' \donttest{
+#' if (nzchar(getOption("censo2022.dir", ""))) {
+#'   censo_info()
+#' }
 #' }
 #'
 #' @seealso \code{\link{censo_configurar}}, \code{\link{censo_descargar}}
@@ -755,17 +768,19 @@ censo_info <- function() {
     ruta_dest <- file.path(subdir, nom)
     if (file.exists(ruta_orig)) {
       file.copy(ruta_orig, ruta_dest, overwrite = TRUE)
-      cat("[OK]   ", nom, "\n")
+      message("[OK]   ", nom)
       n_ok <- n_ok + 1L
     } else {
-      cat("[AVISO] No encontrado:", nom, "\n")
+      message("[AVISO] No encontrado:", nom)
       n_warn <- n_warn + 1L
     }
   }
 
-  cat(sprintf("[INFO]  %d archivos extraidos", n_ok))
-  if (n_warn > 0) cat(sprintf(", %d no encontrados", n_warn))
-  cat("\n")
+  if (n_warn > 0) {
+    message(sprintf("[INFO]  %d archivos extraidos, %d no encontrados", n_ok, n_warn))
+  } else {
+    message(sprintf("[INFO]  %d archivos extraidos", n_ok))
+  }
 }
 
 
@@ -812,6 +827,9 @@ censo_info <- function() {
 #' censo_descargar(que = "bases", overwrite = TRUE)
 #' }
 #'
+#' @return Invisible \code{NULL}. Se ejecuta por sus efectos secundarios
+#' (descarga de archivos al directorio configurado).
+#'
 #' @seealso \code{\link{censo_configurar}}, \code{\link{extraer_redatam}}
 #' @export
 censo_descargar <- function(
@@ -830,7 +848,7 @@ censo_descargar <- function(
 
   # ---- Bases REDATAM --------------------------------------------------------
   if ("bases" %in% que) {
-    cat("[INFO] === BASES REDATAM ===\n")
+    message("[INFO] === BASES REDATAM ===")
     destino <- censo_dir_bases()
     url     <- "https://www.indec.gob.ar/ftp/cuadros/poblacion/bases_censo2022_RedatamX.zip"
 
@@ -839,65 +857,65 @@ censo_descargar <- function(
       file.exists(censo_rxdb_vc())
 
     if (ya_existe && !overwrite) {
-      cat("[INFO]  Las bases ya estan descargadas.\n")
-      cat("[INFO]  Use overwrite = TRUE para forzar la re-descarga.\n")
+      message("[INFO]  Las bases ya estan descargadas.")
+      message("[INFO]  Use overwrite = TRUE para forzar la re-descarga.")
     } else {
-      cat("[INFO]  Descargando bases (~500 MB, puede demorar)...\n")
-      cat("[INFO]  URL:", url, "\n")
+      message("[INFO]  Descargando bases (~500 MB, puede demorar)...")
+      message("[INFO]  URL:", url)
       zip_tmp <- tempfile(fileext = ".zip")
       tryCatch({
         download.file(url, zip_tmp, mode = "wb", method = "auto", quiet = FALSE)
         sz <- round(file.size(zip_tmp) / 1024 / 1024, 1)
-        cat("[INFO]  Descargado:", sz, "MB - descomprimiendo...\n")
+        message("[INFO]  Descargado:", sz, "MB - descomprimiendo...")
         unzip(zip_tmp, exdir = destino)
         file.remove(zip_tmp)
-        cat("[OK]    Bases disponibles en:", destino, "\n")
+        message("[OK]    Bases disponibles en:", destino)
       }, error = function(e) {
-        cat("[ERROR]", conditionMessage(e), "\n")
-        cat("[INFO]  El enlace puede no estar disponible en este momento.\n")
-        cat("[INFO]  Descargue manualmente desde:\n")
-        cat("[INFO]    https://www.indec.gob.ar/indec/web/Institucional-Indec-BasesDeDatos\n")
-        cat("[INFO]  Descomprima el ZIP y copie las carpetas Base_VP, Base_PO_A_IG\n")
-        cat("[INFO]  y Base_VC_PSC en:", destino, "\n")
+        message("[ERROR] ", conditionMessage(e),
+                "\n[INFO]  El enlace puede no estar disponible en este momento.",
+                "\n[INFO]  Descargue manualmente desde:",
+                "\n[INFO]    https://www.indec.gob.ar/indec/web/Institucional-Indec-BasesDeDatos",
+                "\n[INFO]  Descomprima el ZIP y copie las carpetas Base_VP, Base_PO_A_IG",
+                "\n[INFO]  y Base_VC_PSC en: ", destino)
       })
     }
   }
 
   # ---- Metadatos (diccionarios, definiciones, unidades geograficas) ---------
   if ("metadatos" %in% que) {
-    cat("[INFO] === METADATOS ===\n")
+    message("[INFO] === METADATOS ===")
     destino <- censo_dir_metadatos()
     url     <- "https://www.indec.gob.ar/ftp/cuadros/poblacion/metadatos_censo2022_redatam.zip"
 
     ya_existe <- file.exists(censo_xls_vp())
 
     if (ya_existe && !overwrite) {
-      cat("[INFO]  Los metadatos ya estan descargados.\n")
-      cat("[INFO]  Use overwrite = TRUE para forzar la re-descarga.\n")
+      message("[INFO]  Los metadatos ya estan descargados.")
+      message("[INFO]  Use overwrite = TRUE para forzar la re-descarga.")
     } else {
-      cat("[INFO]  Descargando metadatos...\n")
-      cat("[INFO]  URL:", url, "\n")
+      message("[INFO]  Descargando metadatos...")
+      message("[INFO]  URL:", url)
       zip_tmp <- tempfile(fileext = ".zip")
       tryCatch({
         download.file(url, zip_tmp, mode = "wb", method = "auto", quiet = FALSE)
         sz <- round(file.size(zip_tmp) / 1024 / 1024, 1)
-        cat("[INFO]  Descargado:", sz, "MB - descomprimiendo...\n")
+        message("[INFO]  Descargado:", sz, "MB - descomprimiendo...")
         .descomprimir_indec(zip_tmp, destino)  # manejo especial de encoding CP850
         file.remove(zip_tmp)
-        cat("[OK]    Metadatos disponibles en:", destino, "\n")
+        message("[OK]    Metadatos disponibles en:", destino)
       }, error = function(e) {
-        cat("[ERROR]", conditionMessage(e), "\n")
-        cat("[INFO]  El enlace puede no estar disponible en este momento.\n")
-        cat("[INFO]  Descargue manualmente desde:\n")
-        cat("[INFO]    https://www.indec.gob.ar/indec/web/Institucional-Indec-BasesDeDatos\n")
-        cat("[INFO]  Descomprima el ZIP y copie el contenido en:", destino, "\n")
+        message("[ERROR]", conditionMessage(e))
+        message("[INFO]  El enlace puede no estar disponible en este momento.")
+        message("[INFO]  Descargue manualmente desde:")
+        message("[INFO]    https://www.indec.gob.ar/indec/web/Institucional-Indec-BasesDeDatos")
+        message("[INFO]  Descomprima el ZIP y copie el contenido en:", destino)
       })
     }
   }
 
   # ---- Cuestionarios (PDF) --------------------------------------------------
   if ("cuestionarios" %in% que) {
-    cat("[INFO] === CUESTIONARIOS ===\n")
+    message("[INFO] === CUESTIONARIOS ===")
     destino <- file.path(censo_dir_metadatos(), "Cuestionarios")
     dir.create(destino, recursive = TRUE, showWarnings = FALSE)
 
@@ -915,23 +933,23 @@ censo_descargar <- function(
     for (pdf in pdfs) {
       ruta_dest <- file.path(destino, pdf$archivo)
       if (file.exists(ruta_dest) && !overwrite) {
-        cat("[INFO]  Ya existe:", pdf$archivo, "\n")
+        message("[INFO]  Ya existe:", pdf$archivo)
         next
       }
       tryCatch({
         download.file(pdf$url, ruta_dest, mode = "wb", quiet = TRUE)
         sz <- round(file.size(ruta_dest) / 1024 / 1024, 1)
-        cat("[OK]   ", pdf$archivo, "(", sz, "MB)\n")
+        message("[OK]   ", pdf$archivo, "(", sz, "MB)")
       }, error = function(e) {
-        cat("[ERROR]", pdf$archivo, ":", conditionMessage(e), "\n")
-        cat("[INFO]  Descargue manualmente desde:", pdf$url, "\n")
+        message("[ERROR]", pdf$archivo, ":", conditionMessage(e))
+        message("[INFO]  Descargue manualmente desde:", pdf$url)
       })
     }
   }
 
   # ---- Documentacion metodologica (PDF) ------------------------------------
   if ("metodologia" %in% que) {
-    cat("[INFO] === METODOLOGIA ===\n")
+    message("[INFO] === METODOLOGIA ===")
     destino <- file.path(censo_dir_metadatos(), "Definiciones")
     dir.create(destino, recursive = TRUE, showWarnings = FALSE)
 
@@ -949,20 +967,20 @@ censo_descargar <- function(
     for (pdf in pdfs) {
       ruta_dest <- file.path(destino, pdf$archivo)
       if (file.exists(ruta_dest) && !overwrite) {
-        cat("[INFO]  Ya existe:", pdf$archivo, "\n")
+        message("[INFO]  Ya existe:", pdf$archivo)
         next
       }
       tryCatch({
         download.file(pdf$url, ruta_dest, mode = "wb", quiet = TRUE)
         sz <- round(file.size(ruta_dest) / 1024 / 1024, 1)
-        cat("[OK]   ", pdf$archivo, "(", sz, "MB)\n")
+        message("[OK]   ", pdf$archivo, "(", sz, "MB)")
       }, error = function(e) {
-        cat("[ERROR]", pdf$archivo, ":", conditionMessage(e), "\n")
-        cat("[INFO]  Descargue manualmente desde:", pdf$url, "\n")
+        message("[ERROR]", pdf$archivo, ":", conditionMessage(e))
+        message("[INFO]  Descargue manualmente desde:", pdf$url)
       })
     }
   }
 
-  cat("\n[INFO] Descarga finalizada. Ejecute censo_info() para ver el estado.\n")
+  message("\n[INFO] Descarga finalizada. Ejecute censo_info() para ver el estado.")
   invisible(NULL)
 }

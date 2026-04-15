@@ -1,24 +1,39 @@
 Package: censo2022arg
 Type: Package
-Title: Extraccion y Procesamiento de Microdatos del Censo Nacional 2022 de Argentina
-Version: 1.0.0
-Authors@R: person(
-    given   = "Rodrigo Javier",
-    family  = "Duran",
-    role    = c("aut", "cre"),
-    email   = "rodrigo.duran@exa.unsa.edu.ar",
-    comment = c(ORCID = "0000-0002-3957-9510")
+Title: Extraction and Analysis of 2022 Argentina Census Microdata from REDATAM Databases
+Version: 1.0.1
+Authors@R: c(
+    person(
+      given   = "Rodrigo Javier",
+      family  = "Duran",
+      role    = c("aut", "cre"),
+      email   = "rodrigo.duran@exa.unsa.edu.ar",
+      comment = c(ORCID = "0000-0002-3957-9510")
+    ),
+    person(
+      given   = "Jaime",
+      family  = "Salvador",
+      role    = "ctb",
+      comment = "Autor original de red_execute.cpp, red_initialize.cpp y redengine_c.h (paquete redatamx)"
+    ),
+    person(
+      "CELADE - Centro Latinoamericano y Caribeno de Demografia",
+      role = "cph",
+      comment = "Titular de derechos sobre el motor REDATAM"
+    )
   )
-Description: Permite extraer, etiquetar y leer los microdatos del Censo Nacional
-    de Poblacion, Hogares y Viviendas 2022 de Argentina desde las bases REDATAM
-    distribuidas oficialmente por el INDEC. Implementa un pipeline completo de
-    extraccion provincia por provincia con gestion eficiente de memoria,
-    reconstruccion de identificadores jerarquicos, etiquetado automatico de
-    variables desde los diccionarios oficiales del INDEC, y verificacion de
-    integridad contra los totales publicados. Los datos deben descargarse
-    directamente desde el portal oficial del INDEC
-    (<https://www.indec.gob.ar>). El paquete no distribuye datos del censo.
-    Duran (2026) <doi:10.5281/zenodo.19422784>.
+Description: Provides tools to extract, label, and read microdata from the
+    2022 National Census of Population, Households and Dwellings of Argentina
+    stored in REDATAM databases officially distributed by INDEC. Implements
+    a complete province-by-province extraction pipeline with efficient memory
+    management, reconstruction of hierarchical identifiers, automatic variable
+    labeling from official INDEC dictionaries, and integrity verification
+    against published totals. Allows working with census data directly in R
+    without knowledge of REDATAM syntax, and supports export to multiple
+    formats including Parquet, CSV, SPSS and SAS. Census data must be
+    downloaded directly from the official INDEC portal
+    (<https://www.indec.gob.ar>). This package does not distribute census data.
+    Duran (2026) <doi:10.5281/zenodo.19560728>.
 License: GPL (>= 3)
 Encoding: UTF-8
 Language: es

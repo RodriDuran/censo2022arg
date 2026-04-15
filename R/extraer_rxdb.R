@@ -90,7 +90,7 @@
 #'
 #' @examples
 #' \dontrun{
-#' # Uso basico
+#' # Uso basico: convertir cualquier base .rxdb a parquet
 #' extraer_rxdb(
 #'   dic_path    = "/ruta/a/base.rxdb",
 #'   output_file = "/ruta/salida/microdatos.parquet"
@@ -147,7 +147,7 @@ extraer_rxdb <- function(
   # Funcion de log interna: escribe en consola y en archivo
   .log <- function(msg, nivel = "INFO") {
     linea <- paste0("[", format(Sys.time(), "%H:%M:%S"), "] [", nivel, "] ", msg)
-    if (verbose || nivel %in% c("WARN", "ERROR")) cat(linea, "\n")
+    if (verbose || nivel %in% c("WARN", "ERROR")) message(linea)
     cat(linea, "\n", file = log_file, append = TRUE)
   }
 
