@@ -134,7 +134,7 @@ Si utilizas este paquete en tu investigacion, por favor citalo:
 ```
 Duran, R. J. (2026). censo2022arg: Extraccion y Procesamiento de Microdatos
 del Censo Nacional 2022 de Argentina. Version 1.0.1. R package.
-https://doi.org/10.5281/zenodo.19560728
+doi:10.32614/CRAN.package.censo2022arg
 ```
 
 En formato BibTeX:
@@ -142,12 +142,12 @@ En formato BibTeX:
 ```bibtex
 @software{duran2026censo2022arg,
   author  = {Dur{\'a}n, Rodrigo Javier},
-  title   = {{censo2022arg}: Extracci{\'o}n y Procesamiento de Microdatos
+  title   = { {censo2022arg}: Extracci{\'o}n y Procesamiento de Microdatos
              del Censo Nacional 2022 de Argentina},
   year    = {2026},
   version = {1.0.1},
-  doi     = {10.5281/zenodo.19560728},
-  url     = {https://doi.org/10.5281/zenodo.19560728}
+  doi     = {10.32614/CRAN.package.censo2022arg},
+  url     = {https://doi.org/10.32614/CRAN.package.censo2022arg}
 }
 ```
 
