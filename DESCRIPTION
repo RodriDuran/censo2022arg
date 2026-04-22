@@ -33,7 +33,7 @@ Description: Provides tools to extract, label, and read microdata from the
     formats including Parquet, CSV, SPSS and SAS. Census data must be
     downloaded directly from the official INDEC portal
     (<https://www.indec.gob.ar>). This package does not distribute census data.
-    Duran (2026) <doi:10.5281/zenodo.19560728>.
+    Duran (2026) <doi:10.32614/CRAN.package.censo2022arg>.
 License: GPL (>= 3)
 Encoding: UTF-8
 Language: es
