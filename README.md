@@ -2,9 +2,10 @@
 
 <!-- badges: start -->
 [![CRAN status](https://www.r-pkg.org/badges/version/censo2022arg)](https://cran.r-project.org/package=censo2022arg)
+[![CRAN downloads](https://cranlogs.r-pkg.org/badges/censo2022arg)](https://cran.r-project.org/package=censo2022arg)
+[![CRAN downloads total](https://cranlogs.r-pkg.org/badges/grand-total/censo2022arg)](https://cran.r-project.org/package=censo2022arg)
 [![R-CMD-check](https://github.com/RodriDuran/censo2022arg/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/RodriDuran/censo2022arg/actions/workflows/R-CMD-check.yaml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.19422784.svg)](https://doi.org/10.5281/zenodo.19422784)
 <!-- badges: end -->
 
 **censo2022arg** permite extraer, etiquetar y leer los microdatos del Censo
