@@ -862,22 +862,45 @@ censo_descargar <- function(
     } else {
       message("[INFO]  Descargando bases (~500 MB, puede demorar)...")
       message("[INFO]  URL:", url)
-      zip_tmp <- tempfile(fileext = ".zip")
-      tryCatch({
-        download.file(url, zip_tmp, mode = "wb", method = "auto", quiet = FALSE)
-        sz <- round(file.size(zip_tmp) / 1024 / 1024, 1)
-        message("[INFO]  Descargado:", sz, "MB - descomprimiendo...")
-        unzip(zip_tmp, exdir = destino)
-        file.remove(zip_tmp)
-        message("[OK]    Bases disponibles en:", destino)
+      zip_dest <- file.path(destino, "bases_censo2022_RedatamX.zip")
+
+      descarga_ok <- tryCatch({
+        download.file(url, zip_dest, mode = "wb", method = "auto", quiet = FALSE)
+        TRUE
       }, error = function(e) {
-        message("[ERROR] ", conditionMessage(e),
-                "\n[INFO]  El enlace puede no estar disponible en este momento.",
-                "\n[INFO]  Descargue manualmente desde:",
-                "\n[INFO]    https://www.indec.gob.ar/indec/web/Institucional-Indec-BasesDeDatos",
-                "\n[INFO]  Descomprima el ZIP y copie las carpetas Base_VP, Base_PO_A_IG",
-                "\n[INFO]  y Base_VC_PSC en: ", destino)
+        message("[ERROR] Error de conexion: ", conditionMessage(e))
+        FALSE
       })
+
+      if (descarga_ok) {
+        sz <- round(file.size(zip_dest) / 1024^2, 1)
+
+        # Verificar que lo descargado es un ZIP valido y de tamanio razonable
+        es_zip <- tryCatch(
+          { unzip(zip_dest, list = TRUE); TRUE },
+          error   = function(e) FALSE,
+          warning = function(w) FALSE
+        )
+
+        if (!es_zip || sz < 1) {
+          file.remove(zip_dest)
+          message("[ERROR] La descarga no produjo un archivo valido (", sz, " MB).")
+          message("[INFO]  Desde el 4 de mayo de 2026 el INDEC dispuso que las bases")
+          message("[INFO]  no estan disponibles para descarga local.")
+          message("[INFO]  Para acceder escriba a: rodrigo.duran@exa.unsa.edu.ar")
+          message("[INFO]  indicando su afiliacion institucional.")
+        } else {
+          message("[OK]    ZIP descargado (", sz, " MB): ", zip_dest)
+          message("[INFO]  Ejecute censo_descomprimir() para continuar.")
+        }
+      } else {
+        message("[INFO]  Verifique su conexion a internet e intente nuevamente.")
+        message("[INFO]  Si el problema persiste, desde el 4 de mayo de 2026")
+        message("[INFO]  el INDEC dispuso que las bases no estan disponibles")
+        message("[INFO]  para descarga local.")
+        message("[INFO]  Para acceder escriba a: rodrigo.duran@exa.unsa.edu.ar")
+        message("[INFO]  indicando su afiliacion institucional.")
+      }
     }
   }
 
@@ -895,23 +918,45 @@ censo_descargar <- function(
     } else {
       message("[INFO]  Descargando metadatos...")
       message("[INFO]  URL:", url)
-      zip_tmp <- tempfile(fileext = ".zip")
-      tryCatch({
-        download.file(url, zip_tmp, mode = "wb", method = "auto", quiet = FALSE)
-        sz <- round(file.size(zip_tmp) / 1024 / 1024, 1)
-        message("[INFO]  Descargado:", sz, "MB - descomprimiendo...")
-        .descomprimir_indec(zip_tmp, destino)  # manejo especial de encoding CP850
-        file.remove(zip_tmp)
-        message("[OK]    Metadatos disponibles en:", destino)
+      zip_dest <- file.path(destino, "metadatos_censo2022_redatam.zip")
+
+      descarga_ok <- tryCatch({
+        download.file(url, zip_dest, mode = "wb", method = "auto", quiet = FALSE)
+        TRUE
       }, error = function(e) {
-        message("[ERROR]", conditionMessage(e))
-        message("[INFO]  El enlace puede no estar disponible en este momento.")
-        message("[INFO]  Descargue manualmente desde:")
-        message("[INFO]    https://www.indec.gob.ar/indec/web/Institucional-Indec-BasesDeDatos")
-        message("[INFO]  Descomprima el ZIP y copie el contenido en:", destino)
+        message("[ERROR] Error de conexion: ", conditionMessage(e))
+        FALSE
       })
+
+      if (descarga_ok) {
+        sz <- round(file.size(zip_dest) / 1024^2, 1)
+
+        es_zip <- tryCatch(
+          { unzip(zip_dest, list = TRUE); TRUE },
+          error   = function(e) FALSE,
+          warning = function(w) FALSE
+        )
+
+        if (!es_zip || sz < 0.1) {
+          file.remove(zip_dest)
+          message("[ERROR] La descarga no produjo un archivo valido (", sz, " MB).")
+          message("[INFO]  Desde el 4 de mayo de 2026 el INDEC dispuso que las bases")
+          message("[INFO]  y metadatos no estan disponibles para descarga local.")
+          message("[INFO]  Para acceder escriba a: rodrigo.duran@exa.unsa.edu.ar")
+          message("[INFO]  indicando su afiliacion institucional.")
+        } else {
+          message("[OK]    ZIP descargado (", sz, " MB): ", zip_dest)
+          message("[INFO]  Ejecute censo_descomprimir() para continuar.")
+        }
+      } else {
+        message("[INFO]  Verifique su conexion a internet e intente nuevamente.")
+        message("[INFO]  Si el problema persiste, desde el 4 de mayo de 2026")
+        message("[INFO]  el INDEC dispuso que las bases y metadatos no estan")
+        message("[INFO]  disponibles para descarga local.")
+        message("[INFO]  Para acceder escriba a: rodrigo.duran@exa.unsa.edu.ar")
+        message("[INFO]  indicando su afiliacion institucional.")
+      }
     }
-  }
 
   # ---- Cuestionarios (PDF) --------------------------------------------------
   if ("cuestionarios" %in% que) {
@@ -983,4 +1028,5 @@ censo_descargar <- function(
 
   message("\n[INFO] Descarga finalizada. Ejecute censo_info() para ver el estado.")
   invisible(NULL)
-}
+  }
+ }
