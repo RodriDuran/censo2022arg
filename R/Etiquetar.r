@@ -22,12 +22,17 @@
 # en factores con sus etiquetas de valor.
 #
 # Funciones exportadas:
-#   censo_etiquetar() - funcion principal
+#   censo_etiquetar() - funcion principal, compatible con extraer_redatam()
+#                       y extraer_dic(). Seleccion automatica de fuente de
+#                       metadatos: xls > redatam > dic.
 #
 # Funciones internas:
-#   construir_metadatos()            - extrae etiquetas del .rxdb
+#   construir_metadatos()            - extrae etiquetas del .rxdb via motor
 #   construir_metadatos_subprocess() - idem en subproceso (gestion de RAM)
 #   construir_metadatos_xls()        - extrae etiquetas desde XLS del INDEC
+#   construir_metadatos_dic()        - extrae etiquetas desde cualquier
+#                                      diccionario via redatam_variables()
+#                                      sin etiquetas de valores
 #   limpiar_nombre()                 - normaliza nombres de columna
 # =============================================================================
 
@@ -175,6 +180,53 @@ cat("OK", length(meta$var_labels), "variables\\n")
   meta
 }
 
+# =============================================================================
+# FUNCION INTERNA: construir_metadatos_dic()
+#
+# Extrae etiquetas de variables directamente desde cualquier diccionario
+# REDATAM via redatam_variables(). No ejecuta consultas FREQ por lo que
+# no obtiene etiquetas de valores (val_labels estara vacio).
+# Es la fuente preferida para censos anteriores al 2022 o cuando no
+# se dispone de los XLS del INDEC ni del motor completo.
+# =============================================================================
+construir_metadatos_dic <- function(dic_path) {
+
+  dic <- redatam_open(dic_path)
+  on.exit(try(redatam_close(dic), silent = TRUE))
+
+  entidades <- tryCatch(
+    redatam_entities(dic)$name,
+    error = function(e) character(0)
+  )
+
+  if (length(entidades) == 0) {
+    message("[ERROR] No se pudo leer la jerarquia del diccionario.")
+    return(NULL)
+  }
+
+  var_labels <- list()
+
+  for (entidad in entidades) {
+    vars <- tryCatch(
+      redatam_variables(dic, entidad),
+      error = function(e) NULL
+    )
+    if (is.null(vars) || nrow(vars) == 0) next
+
+    for (i in seq_len(nrow(vars))) {
+      nom      <- toupper(vars$name[i])
+      etiqueta <- if (!is.na(vars$label[i]) && nchar(trimws(vars$label[i])) > 0)
+        vars$label[i] else nom
+      var_labels[[nom]] <- etiqueta
+    }
+  }
+
+  message("[INFO]  Metadatos desde diccionario: ",
+          length(var_labels), " variables (sin etiquetas de valores)")
+
+  # val_labels vacio — redatam_variables() no devuelve categorias
+  list(var_labels = var_labels, val_labels = list())
+}
 
 # =============================================================================
 # FUNCION INTERNA: construir_metadatos_xls()
@@ -283,139 +335,174 @@ limpiar_nombre <- function(x) {
   toupper(gsub("_[0-9]+$", "", x))               # sufijo numerico del motor
 }
 
-
 # =============================================================================
 # FUNCION PRINCIPAL: censo_etiquetar()
 # =============================================================================
 
-#' Aplicar etiquetas a los microdatos extraidos del Censo 2022
+#' Aplicar etiquetas a los microdatos extraidos del Censo
 #'
 #' @description
-#' Aplica las etiquetas del diccionario oficial del INDEC a los archivos
-#' de microdatos generados por \code{extraer_redatam()}. El proceso
+#' Aplica las etiquetas del diccionario a los archivos de microdatos
+#' generados por \code{extraer_redatam()} o \code{extraer_dic()}. El proceso
 #' realiza tres transformaciones sobre cada archivo:
 #'
 #' \enumerate{
-#'   \item Limpia los nombres de columna eliminando los sufijos numericos
+#'   \item Limpia los nombres de columna eliminando sufijos numericos
 #'     del motor REDATAM (\code{p01_0} -> \code{P01}).
 #'   \item Agrega una etiqueta descriptiva a cada variable
 #'     (atributo \code{label}).
 #'   \item Convierte las variables categoricas a factor con las etiquetas
-#'     de sus categorias (ej: \code{1} -> \code{"Jefa o jefe"}).
+#'     de sus categorias (solo con fuente \code{"xls"} o \code{"redatam"}).
 #' }
 #'
-#' Las variables geograficas identificadoras no se convierten a factor
-#' porque sus codigos no corresponden al nivel jerarquico del diccionario.
+#' Las variables geograficas identificadoras no se convierten a factor.
 #'
-#' El proceso es idempotente: si un archivo ya fue etiquetado, se detecta
-#' automaticamente y se omite sin modificarlo.
+#' El proceso es idempotente: si un archivo ya fue etiquetado, se omite.
 #'
-#' @param fuente_meta Character. Fuente de los metadatos de etiquetado.
-#'   \code{"xls"} (default): usa los archivos XLS del INDEC, mas rapido
-#'   y sin consumo adicional de memoria. \code{"redatam"}: extrae las
-#'   etiquetas directamente del motor REDATAM via subproceso, util cuando
-#'   no se dispone de los archivos XLS.
-#' @param provincias Numerico o \code{"all"}. Codigos de provincia a
-#'   etiquetar. Default \code{"all"}.
-#' @param bases Character o \code{"all"}. Bases a etiquetar:
-#'   \code{"Personas"}, \code{"Hogares"}, \code{"Viviendas"},
-#'   \code{"colectivas"}, \code{"PO_VP"}. Default \code{"all"}.
+#' @param fuente_meta Character. Fuente de metadatos:
+#'   \code{"auto"} (default): selecciona automaticamente la mejor fuente
+#'   disponible en orden \code{xls > redatam > dic}.
+#'   \code{"xls"}: XLS del INDEC (censo 2022, mejor calidad).
+#'   \code{"redatam"}: motor REDATAM via subproceso (censo 2022 sin XLS).
+#'   \code{"dic"}: diccionario directo via \code{redatam_variables()},
+#'   sin etiquetas de valores. Recomendado para censos anteriores.
+#' @param dic_path Character. Ruta al diccionario (.dicX o .rxdb).
+#'   Requerido cuando \code{fuente_meta = "dic"} con un censo no 2022.
+#'   Si es \code{NULL} (default), usa la base VP configurada.
+#' @param provincias Numerico o \code{"all"}. Codigos de provincia.
+#'   Default \code{"all"}.
+#' @param bases Character o \code{"all"}. Bases a etiquetar.
+#'   Default \code{"all"}.
 #' @param etiquetar Character. Que etiquetas aplicar:
-#'   \code{"todo"} (default), \code{"variables"} (solo nombres),
-#'   \code{"valores"} (solo categorias).
+#'   \code{"todo"} (default), \code{"variables"}, \code{"valores"}.
 #'
-#' @return Invisible \code{NULL}. Modifica los archivos en el directorio
-#'   configurado.
+#' @return Invisible \code{NULL}.
 #'
 #' @examples
 #' \dontrun{
-#' # Etiquetar todas las provincias (configuracion automatica)
+#' # Seleccion automatica de fuente (recomendado)
 #' censo_etiquetar()
 #'
 #' # Solo Formosa y Salta
 #' censo_etiquetar(provincias = c(34, 66))
 #'
-#' # Solo la base de Personas
-#' censo_etiquetar(bases = "Personas")
-#'
-#' # Usando el motor REDATAM como fuente de metadatos
-#' censo_etiquetar(fuente_meta = "redatam")
+#' # Censos anteriores con base .dicX
+#' censo_etiquetar(
+#'   fuente_meta = "dic",
+#'   dic_path    = "D:/Censos/censo2010.dicX"
+#' )
 #' }
 #'
-#' @seealso \code{\link{extraer_redatam}}, \code{\link{censo_leer}}
+#' @seealso \code{\link{extraer_redatam}}, \code{\link{extraer_dic}},
+#'   \code{\link{censo_leer}}
 #' @export
 censo_etiquetar <- function(
-    fuente_meta  = "xls",
+    fuente_meta  = "auto",
+    dic_path     = NULL,
     provincias   = "all",
     bases        = "all",
     etiquetar    = "todo"
 ) {
 
   stopifnot(etiquetar %in% c("todo", "variables", "valores"))
-  fuente_meta <- match.arg(fuente_meta, c("xls", "redatam"))
+  fuente_meta <- match.arg(fuente_meta, c("auto", "xls", "redatam", "dic"))
 
-  # Resolver rutas desde la configuracion del paquete
+  # Resolver rutas
   path        <- censo_dir_provincias()
   xls_path_vp <- censo_xls_vp()
   xls_path_vc <- censo_xls_vc()
-  dic_path_vp <- censo_rxdb_vp()
+  dic_path_vp <- if (!is.null(dic_path)) dic_path else censo_rxdb_vp()
   dic_path_vc <- censo_rxdb_vc()
 
-  # ---- Cargar metadatos segun la fuente elegida ----------------------------
+  # ---- Seleccion automatica de fuente --------------------------------------
+  if (fuente_meta == "auto") {
+    if (file.exists(xls_path_vp)) {
+      fuente_meta <- "xls"
+      message("[INFO]  Fuente seleccionada automaticamente: xls")
+    } else if (file.exists(dic_path_vp)) {
+      fuente_meta <- "redatam"
+      message("[INFO]  XLS no disponibles. Fuente seleccionada: redatam")
+    } else {
+      fuente_meta <- "dic"
+      message("[INFO]  XLS y base VP no disponibles. Fuente seleccionada: dic")
+    }
+  }
+
+  # ---- Cargar metadatos segun la fuente ------------------------------------
   meta_vp <- NULL
   meta_vc <- NULL
 
   if (fuente_meta == "xls") {
 
-    # Fuente XLS: rapida y sin costo de RAM adicional
     if (file.exists(xls_path_vp)) {
-      message("[INFO] Cargando metadatos VP desde XLS...")
+      message("[INFO]  Cargando metadatos VP desde XLS...")
       meta_vp <- construir_metadatos_xls(xls_path_vp)
     } else {
-      message("[AVISO] Diccionario VP (XLS) no encontrado. Ejecute censo_descargar().")
+      message("[AVISO] Diccionario VP (XLS) no encontrado.")
+      message("[INFO]  Ejecute censo_descomprimir() si tiene el ZIP de metadatos,")
+      message("[INFO]  o use fuente_meta = 'redatam' para etiquetar desde las bases.")
     }
 
     if (file.exists(xls_path_vc)) {
-      message("[INFO] Cargando metadatos VC desde XLS...")
+      message("[INFO]  Cargando metadatos VC desde XLS...")
       meta_vc <- construir_metadatos_xls(xls_path_vc)
     } else {
-      message("[AVISO] Diccionario VC (XLS) no encontrado. Ejecute censo_descargar().")
+      message("[AVISO] Diccionario VC (XLS) no encontrado.")
+      message("[INFO]  Ejecute censo_descomprimir() si tiene el ZIP de metadatos,")
+      message("[INFO]  o use fuente_meta = 'redatam' para etiquetar desde las bases.")
     }
 
-  } else {
+  } else if (fuente_meta == "redatam") {
 
-    # Fuente REDATAM: extrae etiquetas del motor en subproceso
     if (file.exists(dic_path_vp)) {
-      message("[INFO] Extrayendo metadatos VP desde REDATAM (puede demorar)...")
+      message("[INFO]  Extrayendo metadatos VP desde REDATAM (puede demorar)...")
       tmp_meta_vp <- tempfile(fileext = ".rds")
+      on.exit(unlink(tmp_meta_vp), add = TRUE)
       meta_vp <- construir_metadatos_subprocess(dic_path_vp, tmp_meta_vp)
       if (!is.null(meta_vp))
-        message("[INFO] VP: ", length(meta_vp$var_labels), " variables, ",
+        message("[INFO]  VP: ", length(meta_vp$var_labels), " variables, ",
                 length(meta_vp$val_labels), " con categorias")
     } else {
-      message("[AVISO] Base VP no encontrada. Ejecute censo_descargar().")
+      message("[AVISO] Base VP no encontrada. Ejecute censo_descomprimir().")
     }
 
     if (file.exists(dic_path_vc)) {
-      message("[INFO] Extrayendo metadatos VC desde REDATAM (puede demorar)...")
+      message("[INFO]  Extrayendo metadatos VC desde REDATAM (puede demorar)...")
       tmp_meta_vc <- tempfile(fileext = ".rds")
+      on.exit(unlink(tmp_meta_vc), add = TRUE)
       meta_vc <- construir_metadatos_subprocess(dic_path_vc, tmp_meta_vc)
       if (!is.null(meta_vc))
-        message("[INFO] VC: ", length(meta_vc$var_labels), " variables, ",
+        message("[INFO]  VC: ", length(meta_vc$var_labels), " variables, ",
                 length(meta_vc$val_labels), " con categorias")
     } else {
-      message("[AVISO] Base VC no encontrada. Ejecute censo_descargar().")
+      message("[AVISO] Base VC no encontrada.")
     }
+
+  } else {  # fuente_meta == "dic"
+
+    if (!is.null(dic_path) && file.exists(dic_path)) {
+      message("[INFO]  Extrayendo metadatos desde diccionario: ", dic_path)
+      meta_vp <- construir_metadatos_dic(dic_path)
+      meta_vc <- meta_vp  # mismo diccionario para todas las entidades
+    } else if (file.exists(dic_path_vp)) {
+      message("[INFO]  Extrayendo metadatos VP desde diccionario configurado...")
+      meta_vp <- construir_metadatos_dic(dic_path_vp)
+      if (file.exists(dic_path_vc))
+        meta_vc <- construir_metadatos_dic(dic_path_vc)
+    } else {
+      message("[AVISO] No se encontro ningun diccionario para extraer metadatos.")
+    }
+
+    if (!is.null(meta_vp))
+      message("[INFO]  Nota: fuente 'dic' no incluye etiquetas de valores (categorias).")
   }
 
-  if (is.null(meta_vp) && is.null(meta_vc)) {
+  if (is.null(meta_vp) && is.null(meta_vc))
     stop("No se pudieron obtener metadatos. Verifique la configuracion con censo_info().")
-  }
 
   gc()
 
   # ---- Obtener lista de archivos a procesar --------------------------------
-
   archivos <- list.files(path, pattern = "\\.(csv|sav|dta|parquet)$",
                          recursive = TRUE, full.names = TRUE,
                          ignore.case = TRUE)
@@ -424,73 +511,66 @@ censo_etiquetar <- function(
   archivos <- archivos[!grepl("codebook|verificacion|_log",
                               basename(archivos), ignore.case = TRUE)]
 
-  # Filtrar por base si se especifico
+  # Filtrar por base — patron ampliado para cubrir extraer_redatam() y extraer_dic()
   if (!identical(bases, "all")) {
-    patron_bases <- paste(bases, collapse = "|")
-    archivos <- archivos[grepl(patron_bases, basename(archivos), ignore.case = TRUE)]
+    # Mapeo de nombres amigables a patrones
+    mapeo_bases <- c(
+      "Personas"   = "Personas|PERSONA",
+      "Hogares"    = "Hogares|HOGAR",
+      "Viviendas"  = "Viviendas|VIVIENDA",
+      "colectivas" = "colectivas",
+      "PO_VP"      = "PO_VP"
+    )
+    patrones <- unname(mapeo_bases[bases])
+    patrones <- patrones[!is.na(patrones)]
+    if (length(patrones) > 0) {
+      patron_bases <- paste(patrones, collapse = "|")
+      archivos <- archivos[grepl(patron_bases, basename(archivos),
+                                 ignore.case = TRUE)]
+    }
   }
 
-  # Filtrar por provincia si se especifico
+  # Filtrar por provincia
   if (!identical(provincias, "all")) {
-    patron_prov <- paste0("[/\\\\](", paste(sprintf("%02d", provincias), collapse = "|"), ")_")
+    patron_prov <- paste0("[/\\\\](", paste(sprintf("%02d", provincias),
+                                            collapse = "|"), ")_")
     archivos <- archivos[grepl(patron_prov, archivos)]
   }
 
   if (length(archivos) == 0) {
     message("[AVISO] No se encontraron archivos para etiquetar.")
-    message("[INFO]  Verifique que los microdatos fueron extraidos con extraer_redatam().")
+    message("[INFO]  Verifique que los microdatos fueron extraidos.")
     return(invisible(NULL))
   }
 
-  message("[INFO] Archivos a etiquetar:", length(archivos))
+  message("[INFO]  Archivos a etiquetar: ", length(archivos))
   n_ok      <- 0L
   n_omitido <- 0L
 
   # ---- Procesar cada archivo -----------------------------------------------
   for (arch in archivos) {
-    message("[INFO] Etiquetando:", basename(arch))
-    ext <- tolower(tools::file_ext(arch))
+    message("[INFO]  Etiquetando: ", basename(arch))
+    ext <- tolower(sub(".*\\.", "", basename(arch)))
 
-    # Las viviendas colectivas usan el diccionario VC; el resto usa VP
+    # Viviendas colectivas usan meta_vc; el resto usa meta_vp
     es_colectiva <- grepl("colectiv", basename(arch), ignore.case = TRUE)
     meta <- if (es_colectiva && !is.null(meta_vc)) meta_vc else meta_vp
 
     if (is.null(meta)) {
-      message("[AVISO]  Sin metadatos para:", basename(arch), "- omitido")
+      message("[AVISO]  Sin metadatos para: ", basename(arch), " - omitido")
       n_omitido <- n_omitido + 1L
       next
     }
 
     tryCatch({
 
-      # Detectar si el archivo ya fue etiquetado
-      # Los archivos sin etiquetar tienen sufijos numericos en los nombres (ej: p01_0)
-      ya_etiquetado <- if (ext == "parquet") {
-        noms <- names(arrow::read_parquet(arch, as_data_frame = FALSE)$schema)
-        !any(grepl("_[0-9]+$", noms))
-      } else if (ext == "csv") {
-        df_test <- data.table::fread(arch, nrows = 1)
-        res <- !any(grepl("_[0-9]+$", names(df_test)))
-        rm(df_test); res
-      } else {
-        FALSE  # formatos sav/dta: siempre procesar
-      }
-
-      if (ya_etiquetado) {
-        message("[INFO]  Ya etiquetado, omitiendo:", basename(arch))
-        next
-      }
-
-      # Leer el archivo segun su formato
+      # Leer el archivo
       df <- NULL
-      on.exit({
-        if (exists("df") && !is.null(df)) { rm(df); gc() }
-      }, add = TRUE)
 
       if (ext == "parquet") {
         df <- as.data.frame(arrow::read_parquet(arch))
       } else if (ext == "csv") {
-        df <- as.data.frame(data.table::fread(arch, skip = "auto"))
+        df <- as.data.frame(data.table::fread(arch))
       } else if (ext == "sav") {
         df <- as.data.frame(haven::read_sav(arch))
       } else if (ext == "dta") {
@@ -498,32 +578,42 @@ censo_etiquetar <- function(
       }
 
       if (is.null(df) || nrow(df) == 0) {
-        message("[INFO]  Archivo vacio, omitiendo:", basename(arch))
+        message("[INFO]   Archivo vacio, omitiendo: ", basename(arch))
         next
       }
 
-      # Limpiar nombres de columna (eliminar sufijos numericos del motor REDATAM)
+      # Detectar si ya fue etiquetado verificando atributo label
+      # Este criterio funciona tanto para archivos de extraer_redatam()
+      # como para extraer_dic() independientemente de los nombres de columna
+      ya_etiquetado <- any(sapply(df, function(x) !is.null(attr(x, "label"))))
+
+      if (ya_etiquetado) {
+        message("[INFO]   Ya etiquetado, omitiendo: ", basename(arch))
+        n_omitido <- n_omitido + 1L
+        next
+      }
+
+      # Limpiar nombres de columna (eliminar sufijos numericos si los tiene)
       names(df) <- limpiar_nombre(names(df))
 
-      # Variables geograficas que NO deben convertirse a factor.
-      # Sus codigos son identificadores compuestos (ej: REDCODEN = 340070101)
-      # que no corresponden a las categorias del diccionario de departamentos.
+      # Variables geograficas que NO se convierten a factor
       vars_geo_id <- c("REDCODEN", "IDPROV", "IDPTO", "IDFRAC", "IDRADIO",
                        "CODGL", "CODLOC", "CODAGLO", "TIPO_RADIO", "CATGL", "URP")
 
-      # Aplicar etiquetas variable por variable
+      # Aplicar etiquetas
       for (j in seq_along(names(df))) {
-        nom <- names(df)[j]
+        nom <- toupper(names(df)[j])
 
         # Etiqueta descriptiva de la variable
         if (etiquetar %in% c("todo", "variables")) {
-          if (nom %in% names(meta$var_labels)) {
+          if (nom %in% names(meta$var_labels) &&
+              !is.null(meta$var_labels[[nom]]) &&
+              nchar(trimws(meta$var_labels[[nom]])) > 0) {
             attr(df[[j]], "label") <- meta$var_labels[[nom]]
           }
         }
 
         # Convertir a factor con etiquetas de categorias
-        # Se excluyen las variables geograficas identificadoras
         if (etiquetar %in% c("todo", "valores")) {
           if (nom %in% names(meta$val_labels) && !nom %in% vars_geo_id) {
             tbl     <- meta$val_labels[[nom]]
@@ -534,7 +624,7 @@ censo_etiquetar <- function(
         }
       }
 
-      # Guardar sobreescribiendo el archivo original
+      # Guardar sobreescribiendo
       if (ext == "parquet") {
         arrow::write_parquet(df, arch, compression = "snappy")
       } else if (ext == "csv") {
@@ -545,11 +635,13 @@ censo_etiquetar <- function(
         haven::write_dta(df, arch)
       }
 
+      rm(df); gc()
       n_ok <- n_ok + 1L
-      message("[INFO]  OK:", basename(arch))
+      message("[OK]    ", basename(arch))
 
     }, error = function(e) {
-      message("[ERROR]", basename(arch), ":", conditionMessage(e))
+      message("[ERROR] ", basename(arch), ": ", conditionMessage(e))
+      n_omitido <<- n_omitido + 1L
     })
   }
 
@@ -557,10 +649,9 @@ censo_etiquetar <- function(
   if (n_omitido == length(archivos)) {
     message("[AVISO] Ningun archivo fue etiquetado.")
     message("[INFO]  Verifique que los diccionarios estan disponibles con censo_info().")
-  } else if (n_omitido > 0) {
-    message("[INFO] Proceso completado -", n_ok, "etiquetados,", n_omitido, "omitidos")
   } else {
-    message("[INFO] Proceso completado -", n_ok, "archivo(s) etiquetado(s)")
+    message("[INFO]  Proceso completado - ", n_ok, " etiquetados, ",
+            n_omitido, " omitidos")
   }
 
   invisible(NULL)

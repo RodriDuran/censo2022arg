@@ -1,45 +1,43 @@
-## Resubmission (2nd)
+## Resubmission (v1.1.0)
 
-This is a second resubmission addressing all points raised by Benjamin Altmann.
+This is a new submission with the following changes:
 
-### Response to reviewer comments
+### New features
 
-**1. English translation of Description**
-Added. The Description field is now in English. The Title field was also
-translated to English for consistency.
+**1. censo_descomprimir() — new function**
+Added a new exported function to decompress and organize the census ZIP files
+into the internal package directory structure. Handles CP850 encoding in ZIP
+filenames (present in INDEC's official distribution) via the 'archive' package.
+Automatically detects each base (VP, PO, VC) by folder name (with synonyms)
+and by file content. If a folder cannot be identified, it is copied to
+censo_dir_bases() with its original name and the user is instructed to rename
+it manually.
 
-**2. Missing \value tag in censo_descargar.Rd**
-Added \value documenting that the function returns invisible NULL and is
-called for its side effects.
+**2. censo_descargar() — improved error detection**
+The function now saves the ZIP file locally instead of extracting immediately,
+allowing censo_descomprimir() to process it separately. Added validation to
+detect when INDEC's server returns an HTML error page instead of the ZIP file
+(as has occurred since May 4, 2026, when INDEC suspended local distribution
+of census bases). In this case, the function informs the user and provides
+contact information to request access.
 
-**3. \dontrun{} replaced by \donttest{}**
-Done for all functions where examples can in principle be executed:
-censo_configurar(), censo_verificar_engine(), and censo_info().
+**3. New dependency: 'archive'**
+Added 'archive' to Imports. This package provides robust ZIP extraction
+handling CP850-encoded filenames that cannot be processed by base R's unzip().
 
-Functions that require external census data files (~500 MB) downloaded
-directly from INDEC (Argentina's national statistics office) under Law
-17.622 on statistical secrecy retain \dontrun{}: censo_descargar(),
-censo_etiquetar(), censo_leer(), extraer_redatam(), and extraer_rxdb().
-These files cannot be redistributed or included in the package. This
-matches the intended use of \dontrun{} per CRAN policy.
+### Bug fixes
 
-**4. print()/cat() replaced by message()**
-All informational console output now uses message() throughout the package,
-allowing suppression via suppressMessages(). Exceptions retained as cat():
-- Interactive readline() prompts (message() breaks readline() behavior)
-- Progress bars using \r (message() does not support carriage return)
-- Script output captured via intern = TRUE in system() calls (message()
-  writes to stderr, breaking capture)
+**4. censo_descargar() — metadatos block**
+The metadatos download block now follows the same validation pattern as the
+bases block: saves ZIP locally, validates it is a real ZIP file before
+processing, and provides informative error messages if INDEC's server is
+unavailable.
 
-**5. Writing to user home filespace**
-censo_configurar() no longer has a default path. The dir argument is now
-required. Examples use tempdir() for the executable example, with real
-paths shown as comments only.
-
-**6. Authors, contributors and copyright holders in Authors@R**
-Added Jaime Salvador (ctb) as contributor for red_execute.cpp,
-red_initialize.cpp and redengine_c.h, which are derived from the redatamx
-package. Added CELADE (cph) as copyright holder of the REDATAM engine.
+**5. Updated user guidance**
+Updated .censo_bienvenida(), censo_info(), and censo_etiquetar() messages
+to reflect the new two-step workflow (censo_descargar() + censo_descomprimir())
+and to inform users about the alternative etiquetado source
+(fuente_meta = 'redatam') when XLS metadata files are unavailable.
 
 ## R CMD check results
 

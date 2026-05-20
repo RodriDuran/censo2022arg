@@ -1,7 +1,7 @@
 Package: censo2022arg
 Type: Package
 Title: Extraction and Analysis of 2022 Argentina Census Microdata from REDATAM Databases
-Version: 1.0.1
+Version: 1.1.0
 Authors@R: c(
     person(
       given   = "Rodrigo Javier",
@@ -44,6 +44,7 @@ Imports:
     redatamx,
     callr (>= 3.7.0),
     arrow,
+    archive,
     data.table,
     haven,
     readxl,

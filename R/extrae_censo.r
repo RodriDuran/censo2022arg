@@ -20,21 +20,24 @@
 # de integridad contra los totales oficiales del INDEC.
 #
 # Funciones exportadas:
-#   extraer_redatam() - funcion principal, orquesta todo el proceso
+#   extraer_redatam() - pipeline completo para bases oficiales INDEC (.rxdb)
+#   extraer_dic()     - pipeline generico para cualquier diccionario REDATAM
+#                       (.dicX o .rxdb), incluyendo censos anteriores y bases
+#                       alternativas. Detecta jerarquia y entidades automaticamente.
 #
 # Funciones internas (no exportadas):
-#   construir_bloques()        - divide variables en grupos manejables
+#   construir_bloques()        - divide variables VP en grupos manejables
+#   construir_bloques_dic()    - version generica para cualquier diccionario
 #   reconstruir_ids()          - genera identificadores de vivienda y hogar
 #   log_msg()                  - registro de eventos con marca de tiempo
 #   progreso()                 - barra de progreso en consola
-#   extraer_bloque()           - extrae un bloque via subproceso
+#   extraer_bloque()           - extrae un bloque via subproceso (por provincia)
+#   extraer_bloque_dic()       - extrae un bloque via subproceso (completo + split)
 #   validar_bloques()          - verifica coherencia entre bloques
 #   eliminar_ctrl_duplicados() - limpia columnas repetidas entre bloques
 #   guardar_df()               - guarda en el formato solicitado
 #   separar_bases()            - genera bases Personas, Hogares, Viviendas
 #   verificar_provincia()      - verifica totales contra el INDEC
-# =============================================================================
-
 # =============================================================================
 # Constantes del pipeline
 # =============================================================================
@@ -1006,6 +1009,502 @@ extraer_redatam <- function(
                      if (!is.null(f$bloque)) paste0(" [", f$bloque, "]") else "",
                      "  ", f$provincia, " (", f$codigo, ")"), log_file)
     }
+  } else {
+    log_msg("Sin errores", log_file)
+  }
+  log_msg("=== FIN ===", log_file)
+
+  invisible(list(fallidas = fallidas, log = log_file))
+}
+
+# =============================================================================
+# FUNCION INTERNA: construir_bloques_dic()
+# =============================================================================
+construir_bloques_dic <- function(dic, entidad, vars_geo_excluir,
+                                  vars_ctrl, max_por_bloque = 10) {
+
+  vars_entidad <- redatam_variables(dic, entidad)$name
+
+  # Excluir variables geograficas y de control — comparacion case-insensitive
+  vars_sust <- vars_entidad[
+    !tolower(vars_entidad) %in% tolower(c(vars_geo_excluir, vars_ctrl))
+  ]
+
+  if (length(vars_sust) == 0) return(list())
+
+  n       <- length(vars_sust)
+  indices <- split(seq_len(n), ceiling(seq_len(n) / max_por_bloque))
+
+  bloques <- lapply(seq_along(indices), function(i) {
+    c(vars_ctrl, vars_sust[indices[[i]]])
+  })
+  names(bloques) <- paste0("b", seq_along(bloques))
+
+  message("[INFO]  Entidad ", entidad, ": ",
+          length(bloques), " bloques, ", n, " variables sustantivas")
+  bloques
+}
+
+
+# =============================================================================
+# FUNCION INTERNA: extraer_bloque_dic()
+# =============================================================================
+extraer_bloque_dic <- function(dic_path, spc, entidad, nom_bloque,
+                               provincias_df, tmp_raiz, log_file) {
+
+  # Verificar si todos los RDS ya existen
+  todos_ok <- all(sapply(provincias_df$codigo, function(cod) {
+    file.exists(file.path(tmp_raiz, entidad,
+                          paste0(sprintf("%02d", cod), "_", nom_bloque, ".rds")))
+  }))
+  if (todos_ok) {
+    log_msg(paste0("Bloque ", nom_bloque, " (", entidad, "): ya existe, saltando"),
+            log_file)
+    return(TRUE)
+  }
+
+  dic_path <- normalizePath(dic_path, winslash = "/", mustWork = FALSE)
+  tmp_raiz <- normalizePath(tmp_raiz, winslash = "/", mustWork = FALSE)
+
+  # Subproceso: extrae bloque completo y hace split por provincia
+  # nom_bloque se pasa explicitamente como argumento para que este
+  # disponible dentro del subproceso (no hay acceso al entorno padre)
+  func_sub <- function(dic_path, spc, entidad, nom_bloque,
+                       provincias_df, tmp_raiz) {
+    tryCatch({
+      if (!requireNamespace("redatamx", quietly = TRUE))
+        stop("Paquete 'redatamx' no disponible.")
+
+      dic <- redatamx::redatam_open(dic_path)
+      on.exit(try(redatamx::redatam_close(dic), silent = TRUE))
+
+      resultado <- redatamx::redatam_query(dic, spc)
+      df_raw    <- if (is.data.frame(resultado)) resultado else resultado[[1]]
+      rm(resultado); gc()
+
+      col_prov <- grep("^idprov", names(df_raw), ignore.case = TRUE,
+                       value = TRUE)[1]
+      if (is.na(col_prov))
+        stop("No se encontro la columna IDPROV en el resultado.")
+
+      dir.create(file.path(tmp_raiz, entidad),
+                 recursive = TRUE, showWarnings = FALSE)
+
+      prov_str <- formatC(provincias_df$codigo, width = 2, flag = "0")
+      n_total  <- 0L
+
+      for (k in seq_len(nrow(provincias_df))) {
+        cod     <- provincias_df$codigo[k]
+        mask    <- as.character(df_raw[[col_prov]]) == prov_str[k]
+        df_prov <- df_raw[mask, , drop = FALSE]
+        out_rds <- file.path(tmp_raiz, entidad,
+                             paste0(sprintf("%02d", cod), "_",
+                                    nom_bloque, ".rds"))
+        saveRDS(df_prov, out_rds)
+        n_total <- n_total + nrow(df_prov)
+        rm(df_prov)
+      }
+      rm(df_raw); gc()
+      n_total
+
+    }, error = function(e) {
+      stop(paste("ERROR en subproceso:", conditionMessage(e)))
+    })
+  }
+
+  ret <- tryCatch({
+    resultado <- callr::r(
+      func   = func_sub,
+      args   = list(dic_path, spc, entidad, nom_bloque,
+                    provincias_df, tmp_raiz),
+      stdout = NULL,
+      stderr = "|"
+    )
+    log_msg(paste0("  Bloque ", nom_bloque, " (", entidad, "): ",
+                   format(resultado, big.mark = ","), " filas totales"),
+            log_file)
+    TRUE
+  }, error = function(e) {
+    log_msg(paste0("ERROR bloque ", nom_bloque, " (", entidad, "): ",
+                   conditionMessage(e)), log_file, "ERROR")
+    stderr_hijo <- tryCatch(e$stderr, error = function(x) NULL)
+    if (!is.null(stderr_hijo) && nchar(trimws(stderr_hijo)) > 0) {
+      for (linea in strsplit(stderr_hijo, "\n")[[1]]) {
+        if (nchar(trimws(linea)) > 0)
+          log_msg(paste0("  [stderr] ", linea), log_file, "ERROR")
+      }
+    }
+    FALSE
+  })
+
+  ret
+}
+
+
+# =============================================================================
+# FUNCION PRINCIPAL: extraer_dic()
+# =============================================================================
+
+#' Extraer microdatos desde cualquier diccionario REDATAM (.dicX o .rxdb)
+#'
+#' @description
+#' Extrae microdatos desde cualquier base REDATAM en formato .dicX o .rxdb,
+#' incluyendo bases de censos anteriores (2001, 2010) o bases alternativas
+#' al formato oficial del INDEC. Detecta automaticamente la jerarquia y las
+#' entidades disponibles, y produce archivos en el mismo formato que
+#' \code{extraer_redatam()}.
+#'
+#' A diferencia de \code{extraer_redatam()}, que filtra por provincia durante
+#' la extraccion, esta funcion extrae cada bloque completo y luego lo divide
+#' por provincia en R. Esto es necesario porque el motor no soporta filtrado
+#' nativo con formatos .dicX.
+#'
+#' @param dic_path Character. Ruta al archivo de diccionario (.dicX o .rxdb).
+#' @param entidades Character. Entidades a extraer. Puede ser \code{"todas"}
+#'   (default) para extraer todas las entidades sustantivas detectadas, o un
+#'   vector con los nombres especificos, por ejemplo
+#'   \code{c("PERSONA", "HOGAR")}.
+#' @param provincias Numerico o \code{"all"}. Codigos de provincia a extraer.
+#'   Default \code{"all"}.
+#' @param formatos Character. Formato de salida. Default \code{"parquet"}.
+#'   Tambien acepta \code{"csv"}, \code{"sav"}, \code{"sas"} o combinaciones.
+#' @param max_por_bloque Integer. Variables por bloque de extraccion.
+#'   Default \code{10}. Reducir en equipos con poca RAM.
+#' @param output_dir Character. Directorio de salida. Si es \code{NULL}
+#'   (default), usa el directorio configurado con \code{censo_configurar()}.
+#'
+#' @return Invisible. Lista con \code{fallidas} y \code{log}.
+#'
+#' @examples
+#' \dontrun{
+#' # Extraer todas las entidades de una base .dicX
+#' extraer_dic(dic_path = "D:/Censos/CNPV2022-AR/CPV2022.dicX")
+#'
+#' # Solo personas de Salta
+#' extraer_dic(
+#'   dic_path   = "D:/Censos/CNPV2022-AR/CPV2022.dicX",
+#'   entidades  = "PERSONA",
+#'   provincias = 66
+#' )
+#'
+#' # Censo 2010
+#' extraer_dic(dic_path = "/ruta/al/censo2010.dicX")
+#' }
+#'
+#' @seealso \code{\link{extraer_redatam}}, \code{\link{censo_etiquetar}}
+#' @export
+extraer_dic <- function(
+    dic_path       = NULL,
+    entidades      = "todas",
+    provincias     = "all",
+    formatos       = "parquet",
+    max_por_bloque = 10,
+    output_dir     = NULL
+) {
+
+  if (is.null(dic_path))
+    stop("Debe especificar dic_path con la ruta al archivo .dicX o .rxdb.")
+
+  dic_path   <- normalizePath(dic_path, winslash = "/", mustWork = FALSE)
+  output_dir <- if (!is.null(output_dir)) output_dir else censo_dir_microdatos()
+
+  if (!file.exists(dic_path))
+    stop("Archivo no encontrado: ", dic_path)
+
+  # Detectar formato sin dependencia externa
+  ext <- tolower(sub(".*\\.", "", basename(dic_path)))
+  message("[INFO]  Formato detectado: .", ext)
+
+  # Crear directorios de salida
+  dir.create(file.path(output_dir, "provincias"),
+             showWarnings = FALSE, recursive = TRUE)
+  dir.create(file.path(output_dir, "logs"),
+             showWarnings = FALSE, recursive = TRUE)
+
+  log_file <- file.path(
+    output_dir, "logs",
+    paste0("extraccion_dic_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".log")
+  )
+
+  log_msg("=== INICIO extraer_dic() ===", log_file)
+  log_msg(paste("Diccionario:", dic_path), log_file)
+  log_msg(paste("Formatos:", paste(formatos, collapse = ", ")), log_file)
+  log_msg(paste("Max vars por bloque:", max_por_bloque), log_file)
+
+  # -------------------------------------------------------------------------
+  # Abrir diccionario en sesion maestra — cerrar manualmente antes de
+  # lanzar subprocesos (no usar on.exit para evitar cancelar otros handlers)
+  # -------------------------------------------------------------------------
+  dic <- redatam_open(dic_path)
+  tmp_spc <- tempfile(fileext = ".spc")
+  on.exit(unlink(tmp_spc), add = TRUE)
+
+  # Detectar jerarquia
+  jerarquia <- redatam_entities(dic)
+  log_msg(paste("Jerarquia:", paste(jerarquia$name, collapse = " -> ")),
+          log_file)
+
+  # Clasificar entidades: geograficas (solo IDs) vs sustantivas (con datos)
+  .es_geografica <- function(entidad) {
+    vars <- redatam_variables(dic, entidad)
+    nrow(vars) <= 3
+  }
+
+  entidades_geo  <- jerarquia$name[sapply(jerarquia$name, .es_geografica)]
+  entidades_sust <- setdiff(jerarquia$name, entidades_geo)
+
+  log_msg(paste("Entidades geograficas:", paste(entidades_geo, collapse = ", ")),
+          log_file)
+  log_msg(paste("Entidades sustantivas:", paste(entidades_sust, collapse = ", ")),
+          log_file)
+
+  # Validar entidades solicitadas
+  if (!identical(entidades, "todas")) {
+    invalidas <- setdiff(toupper(entidades), toupper(entidades_sust))
+    if (length(invalidas) > 0)
+      stop("Entidades no encontradas o no sustantivas: ",
+           paste(invalidas, collapse = ", "),
+           "\nDisponibles: ", paste(entidades_sust, collapse = ", "))
+    # Usar los nombres con el case original del diccionario
+    entidades_sust <- entidades_sust[
+      toupper(entidades_sust) %in% toupper(entidades)
+    ]
+  }
+
+  # Variables geograficas a incluir en TABLE VIEW
+  # Solo IDs y REDCODEN de entidades geograficas
+  # Se prefijan con nombre de entidad para la sintaxis TABLE VIEW
+  vars_geo_spc <- unlist(lapply(entidades_geo, function(e) {
+    vars <- redatam_variables(dic, e)$name
+    vars <- vars[grepl("^ID|^REDCODEN", vars, ignore.case = TRUE)]
+    paste0(e, ".", vars)
+  }))
+
+  # Nombres sin prefijo para excluir de bloques sustantivos
+  vars_geo_nombres <- unlist(lapply(entidades_geo, function(e) {
+    vars <- redatam_variables(dic, e)$name
+    vars[grepl("^ID|^REDCODEN", vars, ignore.case = TRUE)]
+  }))
+
+  # Variables de control: buscar P02 y EDAD en la entidad hoja
+  entidad_hoja <- tail(entidades_sust, 1)
+  vars_hoja    <- redatam_variables(dic, entidad_hoja)$name
+  vars_ctrl    <- intersect(c("P02", "EDAD"), vars_hoja)
+
+  # Si no hay variables de control conocidas, usar las dos primeras
+  # sustantivas (que no sean geograficas)
+  if (length(vars_ctrl) == 0) {
+    vars_ctrl <- setdiff(vars_hoja, vars_geo_nombres)[seq_len(2)]
+    vars_ctrl <- vars_ctrl[!is.na(vars_ctrl)]
+  }
+
+  log_msg(paste("Variables de control:", paste(vars_ctrl, collapse = ", ")),
+          log_file)
+
+  # Obtener lista de provincias
+  log_msg("Obteniendo lista de provincias...", log_file)
+
+  entidad_prov <- jerarquia$name[grepl("^PROV", jerarquia$name,
+                                       ignore.case = TRUE)][1]
+  if (is.na(entidad_prov))
+    stop("No se encontro entidad de provincia en el diccionario.")
+
+  vars_prov    <- redatam_variables(dic, entidad_prov)
+  col_id_prov  <- vars_prov$name[grepl("^ID", vars_prov$name,
+                                       ignore.case = TRUE)][1]
+  col_nom_prov <- vars_prov$name[grepl("NOM|NAME", vars_prov$name,
+                                       ignore.case = TRUE)][1]
+
+  spc_arealist <- paste(
+    "AREALIST", entidad_prov, ",", col_id_prov,
+    if (!is.na(col_nom_prov)) paste0(", ", col_nom_prov) else ""
+  )
+  writeLines(spc_arealist, tmp_spc)
+
+  tmp_prov   <- redatam_run(dic, tmp_spc)
+  prov_raw   <- if (is.data.frame(tmp_prov)) tmp_prov else tmp_prov[[1]]
+  idprov_col <- names(prov_raw)[grepl("idprov", names(prov_raw),
+                                      ignore.case = TRUE)][1]
+
+  if (!is.na(col_nom_prov)) {
+    nprov_col <- names(prov_raw)[grepl(col_nom_prov, names(prov_raw),
+                                       ignore.case = TRUE)][1]
+    nom_prov  <- tolower(gsub("[^a-zA-Z0-9]", "_", prov_raw[[nprov_col]]))
+  } else {
+    nom_prov  <- paste0("prov_", formatC(as.integer(prov_raw[[idprov_col]]),
+                                         width = 2, flag = "0"))
+  }
+
+  provincias_df <- data.frame(
+    codigo = as.integer(prov_raw[[idprov_col]]),
+    nombre = nom_prov,
+    stringsAsFactors = FALSE
+  )
+  rm(tmp_prov, prov_raw); gc()
+
+  # Filtrar provincias
+  if (!identical(provincias, "all")) {
+    provincias_df <- provincias_df[provincias_df$codigo %in% provincias, ]
+    if (nrow(provincias_df) == 0)
+      stop("Ninguna de las provincias indicadas fue encontrada.")
+  }
+  log_msg(paste("Provincias a procesar:", nrow(provincias_df)), log_file)
+
+  # Construir bloques por entidad sustantiva
+  bloques_por_entidad <- lapply(entidades_sust, function(e) {
+    construir_bloques_dic(dic, e, vars_geo_nombres, vars_ctrl, max_por_bloque)
+  })
+  names(bloques_por_entidad) <- entidades_sust
+
+  # CRITICO: cerrar diccionario manualmente antes de subprocesos
+  redatam_close(dic)
+  rm(dic); gc()
+  log_msg("Diccionario cerrado. Iniciando extraccion...", log_file)
+
+  # -------------------------------------------------------------------------
+  # BUCLE PRINCIPAL: por entidad sustantiva
+  # -------------------------------------------------------------------------
+  fallidas  <- list()
+  tmp_raiz  <- file.path(output_dir, "tmp_dic")
+  dir.create(tmp_raiz, recursive = TRUE, showWarnings = FALSE)
+
+  for (entidad in entidades_sust) {
+
+    log_msg(paste0("\n>>> ENTIDAD: ", entidad, " <<<"), log_file)
+    bloques   <- bloques_por_entidad[[entidad]]
+    n_bloques <- length(bloques)
+
+    if (n_bloques == 0) {
+      log_msg(paste0("Sin bloques para ", entidad, ", saltando"),
+              log_file, "WARN")
+      next
+    }
+
+    # -----------------------------------------------------------------------
+    # PASO 1: Extraer todos los bloques de esta entidad
+    # -----------------------------------------------------------------------
+    log_msg(paste0("PASO 1/3 (", entidad, "): Extrayendo ",
+                   n_bloques, " bloques..."), log_file)
+
+    for (j in seq_along(bloques)) {
+      nom_b <- names(bloques)[j]
+
+      # TABLE VIEW con variables geograficas prefijadas + bloque sustantivo
+      spc_b <- paste(
+        "TABLE VIEW", entidad,
+        paste(c(vars_geo_spc, bloques[[nom_b]]), collapse = ", ")
+      )
+
+      progreso(j, n_bloques, paste0(entidad, " bloque ", nom_b))
+
+      ok <- extraer_bloque_dic(
+        dic_path      = dic_path,
+        spc           = spc_b,
+        entidad       = entidad,
+        nom_bloque    = nom_b,
+        provincias_df = provincias_df,
+        tmp_raiz      = tmp_raiz,
+        log_file      = log_file
+      )
+
+      if (!ok) {
+        fallidas[[length(fallidas) + 1]] <- list(
+          entidad = entidad, bloque = nom_b
+        )
+      }
+    }
+
+    # -----------------------------------------------------------------------
+    # PASO 2: Combinar bloques por provincia y guardar
+    # -----------------------------------------------------------------------
+    log_msg(paste0("PASO 2/3 (", entidad, "): Combinando por provincia..."),
+            log_file)
+
+    for (k in seq_len(nrow(provincias_df))) {
+      prov_cod <- provincias_df$codigo[k]
+      prov_nom <- provincias_df$nombre[k]
+      prov_dir <- file.path(
+        output_dir, "provincias",
+        paste0(sprintf("%02d", prov_cod), "_", prov_nom)
+      )
+      dir.create(prov_dir, recursive = TRUE, showWarnings = FALSE)
+
+      # Verificar si ya existe
+      archivo_final <- file.path(prov_dir,
+                                 paste0(prov_nom, "_", entidad, ".parquet"))
+      if (file.exists(archivo_final)) {
+        log_msg(paste0(entidad, " ", prov_nom, ": ya existe, saltando"),
+                log_file)
+        next
+      }
+
+      log_msg(paste0("  Combinando ", entidad, " - ", prov_nom), log_file)
+      df_prov <- NULL
+
+      for (j in seq_along(bloques)) {
+        nom_b <- names(bloques)[j]
+        rds_b <- file.path(tmp_raiz, entidad,
+                           paste0(sprintf("%02d", prov_cod),
+                                  "_", nom_b, ".rds"))
+
+        if (!file.exists(rds_b)) {
+          log_msg(paste0("  RDS no encontrado: ", basename(rds_b)),
+                  log_file, "WARN")
+          next
+        }
+
+        bloque <- readRDS(rds_b)
+
+        if (is.null(df_prov)) {
+          df_prov <- bloque
+        } else {
+          validar_bloques(df_prov, bloque, nom_b, prov_nom, log_file)
+          bloque  <- eliminar_ctrl_duplicados(bloque)
+          df_prov <- cbind(df_prov, bloque)
+        }
+        rm(bloque); gc()
+      }
+
+      if (is.null(df_prov) || nrow(df_prov) == 0) {
+        log_msg(paste0("  Sin datos para ", entidad, " - ", prov_nom),
+                log_file, "WARN")
+        next
+      }
+
+      log_msg(paste0("  ", entidad, " ", prov_nom, ": ",
+                     format(nrow(df_prov), big.mark = ","),
+                     " filas x ", ncol(df_prov), " cols"), log_file)
+
+      guardar_df(df_prov,
+                 file.path(prov_dir, paste0(prov_nom, "_", entidad)),
+                 formatos, log_file)
+      rm(df_prov); gc()
+    }
+
+    # -----------------------------------------------------------------------
+    # PASO 3: Borrar RDS temporales de esta entidad
+    # -----------------------------------------------------------------------
+    log_msg(paste0("PASO 3/3 (", entidad, "): Limpiando temporales..."),
+            log_file)
+    unlink(file.path(tmp_raiz, entidad), recursive = TRUE)
+    gc()
+
+    log_msg(paste0(">>> Entidad ", entidad, " completada <<<"), log_file)
+  }
+
+  # Borrar tmp_raiz si quedo vacio
+  if (dir.exists(tmp_raiz) &&
+      length(list.files(tmp_raiz, recursive = TRUE)) == 0)
+    unlink(tmp_raiz, recursive = TRUE)
+
+  # =========================================================================
+  # RESUMEN FINAL
+  # =========================================================================
+  log_msg("\n=== RESUMEN FINAL ===", log_file)
+  if (length(fallidas) > 0) {
+    log_msg(paste("Fallos:", length(fallidas)), log_file, "WARN")
+    for (f in fallidas)
+      log_msg(paste0("  - ", f$entidad, " [", f$bloque, "]"), log_file, "WARN")
   } else {
     log_msg("Sin errores", log_file)
   }

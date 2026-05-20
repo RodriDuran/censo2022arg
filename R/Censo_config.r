@@ -80,10 +80,12 @@ NULL
   cat("---------------------------------------------------------------------\n")
   cat("  1. censo_configurar('/ruta/datos')  # elegir donde guardar los datos\n")
   cat("  2. censo_verificar_engine()         # preparar el motor de extraccion\n")
-  cat("  3. censo_descargar()                # descargar bases del INDEC\n")
-  cat("  4. extraer_redatam()                # extraer microdatos por provincia\n")
-  cat("  5. censo_etiquetar()                # aplicar etiquetas a las variables\n")
-  cat("  6. censo_leer(base = 'Personas')    # leer y analizar los datos\n")
+  cat("  3. censo_descargar()                # intentar descarga desde INDEC\n")
+  cat("  4. censo_descomprimir()             # descomprimir y organizar bases\n")
+  cat("  5. extraer_redatam()                # extraer microdatos por provincia\n")
+  cat("  6. censo_etiquetar()                # etiquetar variables (requiere metadatos)\n")
+  cat("     censo_etiquetar(fuente_meta = 'redatam')  # alternativa sin metadatos XLS\n")
+  cat("  7. censo_leer(base = 'Personas')    # leer y analizar los datos\n")
   cat("\n")
   cat("---------------------------------------------------------------------\n")
   cat("    Ayuda\n")
@@ -658,14 +660,32 @@ censo_info <- function() {
   # Sugerir el proximo paso segun el estado actual
   cat("\n-- Proximo paso sugerido -----------------------------------------\n")
   if (!bases_rxdb_ok) {
-    cat("  Las bases del censo no estan descargadas. Ejecuta:\n\n")
-    cat("    censo_descargar()\n\n")
-    cat("  Si ya las descargo manualmente, puede pasarlas directamente\n")
-    cat("  a extraer_redatam(). Consulte: ?extraer_redatam\n")
+    # Verificar si hay ZIP descargado pero sin descomprimir
+    zip_bases <- file.path(censo_dir_bases(), "bases_censo2022_RedatamX.zip")
+    zip_meta  <- file.path(censo_dir_metadatos(), "metadatos_censo2022_redatam.zip")
+    hay_zip   <- file.exists(zip_bases) || file.exists(zip_meta)
+
+    if (hay_zip) {
+      cat("  Se encontro un ZIP descargado. Para descomprimir:\n\n")
+      cat("    censo_descomprimir()\n\n")
+    } else {
+      cat("  Las bases del censo no estan disponibles. Ejecute:\n\n")
+      cat("    censo_descargar()   # intentar descarga desde INDEC\n\n")
+      cat("  Nota: desde el 4 de mayo de 2026 el INDEC no distribuye\n")
+      cat("  las bases para descarga local. Si las tiene en un ZIP,\n")
+      cat("  indique su ubicacion:\n\n")
+      cat("    censo_descomprimir(dir = 'ruta/donde/esta/el/zip')\n\n")
+      cat("  Para solicitar acceso escriba a:\n")
+      cat("    rodrigo.duran@exa.unsa.edu.ar\n")
+    }
   } else if (!bases_xls_ok) {
-    cat("  Las bases estan disponibles pero faltan los diccionarios de variables.\n")
-    cat("  Son necesarios para etiquetar los microdatos. Ejecute:\n\n")
-    cat("    censo_descargar(que = 'metadatos')\n")
+    cat("  Las bases estan disponibles pero faltan los diccionarios.\n\n")
+    cat("  Opcion 1: si tiene el ZIP de metadatos:\n\n")
+    cat("    censo_descomprimir(dir = 'ruta/donde/esta/el/zip')\n\n")
+    cat("  Opcion 2: etiquetar directamente desde las bases (sin XLS):\n\n")
+    cat("    censo_etiquetar(fuente_meta = 'redatam')\n\n")
+    cat("  Para solicitar acceso a los metadatos escriba a:\n")
+    cat("    rodrigo.duran@exa.unsa.edu.ar\n")
   } else if (length(provs) == 0) {
     cat("  Las bases estan disponibles. Para extraer los microdatos:\n\n")
     cat("    extraer_redatam()                # todas las provincias\n")
@@ -841,8 +861,6 @@ censo_descargar <- function(
                    several.ok = TRUE)
   if ("todo" %in% que) que <- c("bases", "metadatos", "cuestionarios", "metodologia")
 
-  # Ampliar el timeout para archivos grandes (bases ~500 MB)
-  # Se restaura automaticamente al salir de la funcion
   op_orig <- options(timeout = 3600)
   on.exit(options(op_orig), add = TRUE)
 
@@ -850,6 +868,7 @@ censo_descargar <- function(
   if ("bases" %in% que) {
     message("[INFO] === BASES REDATAM ===")
     destino <- censo_dir_bases()
+    dir.create(destino, recursive = TRUE, showWarnings = FALSE)
     url     <- "https://www.indec.gob.ar/ftp/cuadros/poblacion/bases_censo2022_RedatamX.zip"
 
     ya_existe <- file.exists(censo_rxdb_vp()) &&
@@ -873,15 +892,12 @@ censo_descargar <- function(
       })
 
       if (descarga_ok) {
-        sz <- round(file.size(zip_dest) / 1024^2, 1)
-
-        # Verificar que lo descargado es un ZIP valido y de tamanio razonable
+        sz     <- round(file.size(zip_dest) / 1024^2, 1)
         es_zip <- tryCatch(
           { unzip(zip_dest, list = TRUE); TRUE },
           error   = function(e) FALSE,
           warning = function(w) FALSE
         )
-
         if (!es_zip || sz < 1) {
           file.remove(zip_dest)
           message("[ERROR] La descarga no produjo un archivo valido (", sz, " MB).")
@@ -904,10 +920,11 @@ censo_descargar <- function(
     }
   }
 
-  # ---- Metadatos (diccionarios, definiciones, unidades geograficas) ---------
+  # ---- Metadatos ------------------------------------------------------------
   if ("metadatos" %in% que) {
     message("[INFO] === METADATOS ===")
     destino <- censo_dir_metadatos()
+    dir.create(destino, recursive = TRUE, showWarnings = FALSE)
     url     <- "https://www.indec.gob.ar/ftp/cuadros/poblacion/metadatos_censo2022_redatam.zip"
 
     ya_existe <- file.exists(censo_xls_vp())
@@ -929,14 +946,12 @@ censo_descargar <- function(
       })
 
       if (descarga_ok) {
-        sz <- round(file.size(zip_dest) / 1024^2, 1)
-
+        sz     <- round(file.size(zip_dest) / 1024^2, 1)
         es_zip <- tryCatch(
           { unzip(zip_dest, list = TRUE); TRUE },
           error   = function(e) FALSE,
           warning = function(w) FALSE
         )
-
         if (!es_zip || sz < 0.1) {
           file.remove(zip_dest)
           message("[ERROR] La descarga no produjo un archivo valido (", sz, " MB).")
@@ -957,6 +972,7 @@ censo_descargar <- function(
         message("[INFO]  indicando su afiliacion institucional.")
       }
     }
+  }
 
   # ---- Cuestionarios (PDF) --------------------------------------------------
   if ("cuestionarios" %in% que) {
@@ -978,16 +994,16 @@ censo_descargar <- function(
     for (pdf in pdfs) {
       ruta_dest <- file.path(destino, pdf$archivo)
       if (file.exists(ruta_dest) && !overwrite) {
-        message("[INFO]  Ya existe:", pdf$archivo)
+        message("[INFO]  Ya existe: ", pdf$archivo)
         next
       }
       tryCatch({
         download.file(pdf$url, ruta_dest, mode = "wb", quiet = TRUE)
-        sz <- round(file.size(ruta_dest) / 1024 / 1024, 1)
-        message("[OK]   ", pdf$archivo, "(", sz, "MB)")
+        sz <- round(file.size(ruta_dest) / 1024^2, 1)
+        message("[OK]    ", pdf$archivo, " (", sz, " MB)")
       }, error = function(e) {
-        message("[ERROR]", pdf$archivo, ":", conditionMessage(e))
-        message("[INFO]  Descargue manualmente desde:", pdf$url)
+        message("[ERROR] ", pdf$archivo, ": ", conditionMessage(e))
+        message("[INFO]  Descargue manualmente desde: ", pdf$url)
       })
     }
   }
@@ -1012,21 +1028,351 @@ censo_descargar <- function(
     for (pdf in pdfs) {
       ruta_dest <- file.path(destino, pdf$archivo)
       if (file.exists(ruta_dest) && !overwrite) {
-        message("[INFO]  Ya existe:", pdf$archivo)
+        message("[INFO]  Ya existe: ", pdf$archivo)
         next
       }
       tryCatch({
         download.file(pdf$url, ruta_dest, mode = "wb", quiet = TRUE)
-        sz <- round(file.size(ruta_dest) / 1024 / 1024, 1)
-        message("[OK]   ", pdf$archivo, "(", sz, "MB)")
+        sz <- round(file.size(ruta_dest) / 1024^2, 1)
+        message("[OK]    ", pdf$archivo, " (", sz, " MB)")
       }, error = function(e) {
-        message("[ERROR]", pdf$archivo, ":", conditionMessage(e))
-        message("[INFO]  Descargue manualmente desde:", pdf$url)
+        message("[ERROR] ", pdf$archivo, ": ", conditionMessage(e))
+        message("[INFO]  Descargue manualmente desde: ", pdf$url)
       })
     }
   }
 
   message("\n[INFO] Descarga finalizada. Ejecute censo_info() para ver el estado.")
   invisible(NULL)
+}
+
+# =============================================================================
+# FUNCION: censo_descomprimir()
+# =============================================================================
+
+#' Descomprimir y organizar las bases y metadatos del Censo 2022
+#'
+#' @description
+#' Procesa los archivos ZIP de bases y metadatos del Censo 2022 y los organiza
+#' en los directorios internos del paquete. Detecta automaticamente cada
+#' subcarpeta por nombre (con sinonimos) y por contenido. Si no puede
+#' identificar alguna carpeta, la copia a \code{censo_dir_bases()} con su
+#' nombre original e indica al usuario como renombrarla manualmente.
+#'
+#' Los ZIPs originales se conservan. Solo se eliminan los archivos temporales
+#' generados durante el proceso.
+#'
+#' @param dir Character. Carpeta donde estan los ZIPs. Si es \code{NULL}
+#'   (default), busca en \code{censo_dir_bases()} y
+#'   \code{censo_dir_metadatos()}.
+#' @param borrar_zip Logico. Si \code{TRUE}, elimina los ZIPs al terminar.
+#'   Default \code{FALSE}.
+#' @param overwrite Logico. Si \code{TRUE}, sobreescribe archivos existentes.
+#'   Default \code{FALSE}.
+#'
+#' @return Invisible \code{NULL}.
+#'
+#' @examples
+#' \dontrun{
+#' # ZIPs en una carpeta propia
+#' censo_descomprimir(dir = "D:/Descargas/censo")
+#'
+#' # ZIPs ya en los directorios internos del paquete
+#' censo_descomprimir()
+#'
+#' # Eliminar ZIPs al terminar
+#' censo_descomprimir(dir = "D:/Descargas/censo", borrar_zip = TRUE)
+#' }
+#'
+#' @export
+censo_descomprimir <- function(
+    dir        = NULL,
+    borrar_zip = FALSE,
+    overwrite  = FALSE
+) {
+
+  # ---------------------------------------------------------------------------
+  # Normaliza texto para comparacion: minusculas, sin tildes
+  # ---------------------------------------------------------------------------
+  .normalizar <- function(x) {
+    x <- tolower(x)
+    chartr("\u00e1\u00e9\u00ed\u00f3\u00fa\u00fc\u00f1",
+           "aeiouun", x)
   }
- }
+
+  # ---------------------------------------------------------------------------
+  # Detecta tipo de base por nombre de carpeta
+  # Retorna "VP", "PO", "VC" o NA
+  # ---------------------------------------------------------------------------
+  .tipo_por_nombre <- function(nombre) {
+    n <- .normalizar(nombre)
+    if (grepl("particular|base.?vp|\\bvp\\b", n))                            return("VP")
+    if (grepl("originario|afrodescendiente|identidad|base.?po|\\bpo\\b", n)) return("PO")
+    if (grepl("colectiv|situacion.?de.?calle|base.?vc|\\bvc\\b", n))         return("VC")
+    NA_character_
+  }
+
+  # ---------------------------------------------------------------------------
+  # Copia archivos de una carpeta a destino
+  # ---------------------------------------------------------------------------
+  .copiar_carpeta <- function(origen, destino) {
+    dir.create(destino, recursive = TRUE, showWarnings = FALSE)
+    archivos <- list.files(origen, full.names = TRUE, recursive = FALSE)
+    n_ok <- 0L
+    for (f in archivos) {
+      dest_f <- file.path(destino, basename(f))
+      if (file.exists(dest_f) && !overwrite) { n_ok <- n_ok + 1L; next }
+      ok <- tryCatch(
+        { file.copy(f, dest_f, overwrite = overwrite); TRUE },
+        error = function(e) FALSE
+      )
+      if (ok) n_ok <- n_ok + 1L else
+        message("[WARN]  No se pudo copiar: ", basename(f))
+    }
+    n_ok
+  }
+
+  # ---------------------------------------------------------------------------
+  # Buscar ZIPs
+  # ---------------------------------------------------------------------------
+  if (is.null(dir)) {
+    dirs_busqueda <- unique(c(censo_dir_bases(), censo_dir_metadatos()))
+  } else {
+    dirs_busqueda <- normalizePath(dir, winslash = "/", mustWork = FALSE)
+  }
+
+  todos_zips <- unlist(lapply(dirs_busqueda, function(d) {
+    if (!dir.exists(d)) return(character(0))
+    list.files(d, pattern = "\\.zip$", full.names = TRUE,
+               ignore.case = TRUE, recursive = FALSE)
+  }))
+
+  if (length(todos_zips) == 0)
+    stop(
+      "No se encontraron archivos ZIP en: ",
+      paste(dirs_busqueda, collapse = ", "),
+      "\nDescargue con censo_descargar() o copie los ZIPs manualmente."
+    )
+
+  # Clasificar ZIPs por nombre
+  .es_zip_bases <- function(ruta) grepl("bases.*redatam|redatamx",
+                                        .normalizar(basename(ruta)))
+  .es_zip_meta  <- function(ruta) grepl("metadato|diccionario",
+                                        .normalizar(basename(ruta)))
+
+  zip_bases <- todos_zips[sapply(todos_zips, .es_zip_bases)]
+  zip_meta  <- todos_zips[sapply(todos_zips, .es_zip_meta)]
+
+  sin_clasificar_zip <- todos_zips[
+    !sapply(todos_zips, .es_zip_bases) &
+      !sapply(todos_zips, .es_zip_meta)
+  ]
+  if (length(sin_clasificar_zip) > 0) {
+    message("[AVISO] No se pudo identificar el tipo del siguiente ZIP:")
+    for (z in sin_clasificar_zip) message("        ", z)
+    message("[INFO]  Renombre con uno de estos patrones y reintente:")
+    message("[INFO]    Bases:     'bases_censo2022_RedatamX.zip'")
+    message("[INFO]    Metadatos: 'metadatos_censo2022_redatam.zip'")
+  }
+
+  # ---- Bases REDATAM --------------------------------------------------------
+  if (length(zip_bases) > 0) {
+
+    if (length(zip_bases) > 1) {
+      message("[AVISO] Se encontraron ", length(zip_bases), " ZIPs de bases.")
+      message("[INFO]  Se usara: ", zip_bases[1])
+    }
+    zip_bases <- zip_bases[1]
+    message("[INFO] === BASES REDATAM ===")
+    message("[INFO]  ZIP: ", zip_bases)
+
+    ya_ok <- file.exists(censo_rxdb_vp()) &&
+      file.exists(censo_rxdb_po()) &&
+      file.exists(censo_rxdb_vc())
+
+    if (ya_ok && !overwrite) {
+      message("[INFO]  Las bases ya estan descomprimidas.")
+      message("[INFO]  Use overwrite = TRUE para forzar.")
+    } else {
+
+      # Extraer a temp
+      tmp_raiz <- file.path(tempdir(), "censo_descomprimir_bases")
+      unlink(tmp_raiz, recursive = TRUE)
+      dir.create(tmp_raiz, recursive = TRUE, showWarnings = FALSE)
+
+      message("[INFO]  Descomprimiendo (puede demorar)...")
+      archive::archive_extract(zip_bases, dir = tmp_raiz)
+
+      # Encontrar carpetas que contienen archivos de bases directamente
+      todas_dirs <- list.dirs(tmp_raiz, recursive = TRUE, full.names = TRUE)
+      todas_dirs <- todas_dirs[todas_dirs != tmp_raiz]
+
+      dirs_con_bases <- todas_dirs[sapply(todas_dirs, function(d) {
+        archivos <- list.files(d, recursive = FALSE)
+        any(grepl("\\.rxdb$|\\.rbfx$", archivos, ignore.case = TRUE))
+      })]
+
+      if (length(dirs_con_bases) == 0) {
+        unlink(tmp_raiz, recursive = TRUE)
+        stop("No se encontraron archivos de bases en el ZIP.")
+      }
+
+      # Clasificar por nombre primero
+      clasificadas <- list(VP = NULL, PO = NULL, VC = NULL)
+      sin_nombre   <- character(0)
+
+      for (sc in dirs_con_bases) {
+        tipo <- .tipo_por_nombre(basename(sc))
+        if (!is.na(tipo)) {
+          clasificadas[[tipo]] <- sc
+        } else {
+          sin_nombre <- c(sin_nombre, sc)
+        }
+      }
+
+      # Para las sin nombre: detectar por contenido
+      candidatas <- list()
+      sin_tipo   <- character(0)
+
+      for (sc in sin_nombre) {
+        archivos <- list.files(sc, recursive = FALSE)
+        if (any(grepl("col\\.rxdb$", archivos, ignore.case = TRUE))) {
+          clasificadas$VC <- sc
+          next
+        }
+        rxdb <- list.files(sc, pattern = "^cpv2022\\.rxdb$",
+                           ignore.case = TRUE, full.names = TRUE)
+        if (length(rxdb) > 0) {
+          candidatas <- c(candidatas,
+                          list(list(ruta = sc, sz = file.size(rxdb[1]))))
+        } else {
+          sin_tipo <- c(sin_tipo, sc)
+        }
+      }
+
+      # Resolver candidatas VP vs PO por tamanio del .rxdb
+      if (length(candidatas) >= 2) {
+        szs    <- sapply(candidatas, `[[`, "sz")
+        idx_vp <- which.max(szs)
+        idx_po <- which.min(szs)
+        if (is.null(clasificadas$VP)) clasificadas$VP <- candidatas[[idx_vp]]$ruta
+        if (is.null(clasificadas$PO)) clasificadas$PO <- candidatas[[idx_po]]$ruta
+      } else if (length(candidatas) == 1) {
+        sin_tipo <- c(sin_tipo, candidatas[[1]]$ruta)
+      }
+
+      # Verificar asignacion VP vs PO por tamanio del .rxdb
+      # Incluso si se reconocieron por nombre, confirmar que VP > PO
+      if (!is.null(clasificadas$VP) && !is.null(clasificadas$PO)) {
+        rxdb_vp <- list.files(clasificadas$VP, pattern = "^cpv2022\\.rxdb$",
+                              ignore.case = TRUE, full.names = TRUE)
+        rxdb_po <- list.files(clasificadas$PO, pattern = "^cpv2022\\.rxdb$",
+                              ignore.case = TRUE, full.names = TRUE)
+        sz_vp <- if (length(rxdb_vp) > 0) file.size(rxdb_vp[1]) else 0L
+        sz_po <- if (length(rxdb_po) > 0) file.size(rxdb_po[1]) else 0L
+        if (sz_vp < sz_po) {
+          message("[INFO]  Asignacion VP/PO corregida por tamanio del diccionario.")
+          tmp_sc         <- clasificadas$VP
+          clasificadas$VP <- clasificadas$PO
+          clasificadas$PO <- tmp_sc
+        }
+      }
+
+      # Copiar bases reconocidas
+      if (!is.null(clasificadas$VP)) {
+        n <- .copiar_carpeta(clasificadas$VP,
+                             file.path(censo_dir_bases(), "Base_VP"))
+        message("[OK]    Base VP (", n, " archivos)")
+      }
+      if (!is.null(clasificadas$PO)) {
+        n <- .copiar_carpeta(clasificadas$PO,
+                             file.path(censo_dir_bases(), "Base_PO_A_IG"))
+        message("[OK]    Base PO (", n, " archivos)")
+      }
+      if (!is.null(clasificadas$VC)) {
+        n <- .copiar_carpeta(clasificadas$VC,
+                             file.path(censo_dir_bases(), "Base_VC_PSC"))
+        message("[OK]    Base VC (", n, " archivos)")
+      }
+
+      # Carpetas no reconocidas: copiar a censo_dir_bases() con nombre unico
+      if (length(sin_tipo) > 0) {
+        message("[AVISO] No se pudo identificar la siguiente carpeta:")
+        for (sc in sin_tipo) {
+          # Usar ruta relativa al tmp como nombre para evitar colisiones
+          nombre_rel <- gsub(.normalizar(tmp_raiz), "",
+                             .normalizar(sc), fixed = TRUE)
+          nombre_rel <- gsub("[/\\\\]", "_", nombre_rel)
+          nombre_rel <- sub("^_+", "", nombre_rel)
+          dest_sc <- file.path(censo_dir_bases(), nombre_rel)
+          .copiar_carpeta(sc, dest_sc)
+          message("        ", dest_sc)
+        }
+        message("[INFO]  Renombre esa carpeta en: ", censo_dir_bases())
+        message("[INFO]  con uno de estos nombres y ejecute censo_descomprimir():")
+        message("[INFO]    Base_VP       (viviendas particulares)")
+        message("[INFO]    Base_PO_A_IG  (pueblos originarios)")
+        message("[INFO]    Base_VC_PSC   (viviendas colectivas)")
+      }
+
+      # Borrar temp siempre al final
+      unlink(tmp_raiz, recursive = TRUE)
+
+      # Verificar resultado
+      ok_vp <- file.exists(censo_rxdb_vp())
+      ok_po <- file.exists(censo_rxdb_po())
+      ok_vc <- file.exists(censo_rxdb_vc())
+
+      if (ok_vp && ok_po && ok_vc) {
+        message("[OK]    Bases listas.")
+        if (borrar_zip) {
+          file.remove(zip_bases)
+          message("[INFO]  ZIP bases eliminado.")
+        }
+      } else {
+        if (!ok_vp) message("[ERROR] Base VP no encontrada: ", censo_rxdb_vp())
+        if (!ok_po) message("[ERROR] Base PO no encontrada: ", censo_rxdb_po())
+        if (!ok_vc) message("[ERROR] Base VC no encontrada: ", censo_rxdb_vc())
+        message("[INFO]  Verifique las carpetas en: ", censo_dir_bases())
+      }
+    }
+  } else {
+    message("[AVISO] No se encontro ZIP de bases.")
+    message("[INFO]  Para acceder escriba a: rodrigo.duran@exa.unsa.edu.ar")
+    message("[INFO]  indicando su afiliacion institucional.")
+  }
+
+  # ---- Metadatos ------------------------------------------------------------
+  if (length(zip_meta) > 0) {
+
+    if (length(zip_meta) > 1) {
+      message("[AVISO] Se encontraron ", length(zip_meta), " ZIPs de metadatos.")
+      message("[INFO]  Se usara: ", zip_meta[1])
+    }
+    zip_meta <- zip_meta[1]
+    message("[INFO] === METADATOS ===")
+    message("[INFO]  ZIP: ", zip_meta)
+
+    ya_ok <- file.exists(censo_xls_vp())
+
+    if (ya_ok && !overwrite) {
+      message("[INFO]  Los metadatos ya estan descomprimidos.")
+      message("[INFO]  Use overwrite = TRUE para forzar.")
+    } else {
+      destino_meta <- censo_dir_metadatos()
+      dir.create(destino_meta, recursive = TRUE, showWarnings = FALSE)
+      .descomprimir_indec(zip_meta, destino_meta)
+      message("[OK]    Metadatos listos.")
+      if (borrar_zip) {
+        file.remove(zip_meta)
+        message("[INFO]  ZIP metadatos eliminado.")
+      }
+    }
+  } else {
+    message("[AVISO] No se encontro ZIP de metadatos.")
+    message("[INFO]  Para acceder escriba a: rodrigo.duran@exa.unsa.edu.ar")
+    message("[INFO]  indicando su afiliacion institucional.")
+  }
+
+  invisible(NULL)
+}
