@@ -2,73 +2,76 @@
 % Please edit documentation in R/Etiquetar.R
 \name{censo_etiquetar}
 \alias{censo_etiquetar}
-\title{Aplicar etiquetas a los microdatos extraidos del Censo 2022}
+\title{Aplicar etiquetas a los microdatos extraidos del Censo}
 \usage{
 censo_etiquetar(
-  fuente_meta = "xls",
+  fuente_meta = "auto",
+  dic_path = NULL,
   provincias = "all",
   bases = "all",
   etiquetar = "todo"
 )
 }
 \arguments{
-\item{fuente_meta}{Character. Fuente de los metadatos de etiquetado.
-\code{"xls"} (default): usa los archivos XLS del INDEC, mas rapido
-y sin consumo adicional de memoria. \code{"redatam"}: extrae las
-etiquetas directamente del motor REDATAM via subproceso, util cuando
-no se dispone de los archivos XLS.}
+\item{fuente_meta}{Character. Fuente de metadatos:
+\code{"auto"} (default): selecciona automaticamente la mejor fuente
+disponible en orden \code{xls > redatam > dic}.
+\code{"xls"}: XLS del INDEC (censo 2022, mejor calidad).
+\code{"redatam"}: motor REDATAM via subproceso (censo 2022 sin XLS).
+\code{"dic"}: diccionario directo via \code{redatam_variables()},
+sin etiquetas de valores. Recomendado para censos anteriores.}
 
-\item{provincias}{Numerico o \code{"all"}. Codigos de provincia a
-etiquetar. Default \code{"all"}.}
+\item{dic_path}{Character. Ruta al diccionario (.dicX o .rxdb).
+Requerido cuando \code{fuente_meta = "dic"} con un censo no 2022.
+Si es \code{NULL} (default), usa la base VP configurada.}
 
-\item{bases}{Character o \code{"all"}. Bases a etiquetar:
-\code{"Personas"}, \code{"Hogares"}, \code{"Viviendas"},
-\code{"colectivas"}, \code{"PO_VP"}. Default \code{"all"}.}
+\item{provincias}{Numerico o \code{"all"}. Codigos de provincia.
+Default \code{"all"}.}
+
+\item{bases}{Character o \code{"all"}. Bases a etiquetar.
+Default \code{"all"}.}
 
 \item{etiquetar}{Character. Que etiquetas aplicar:
-\code{"todo"} (default), \code{"variables"} (solo nombres),
-\code{"valores"} (solo categorias).}
+\code{"todo"} (default), \code{"variables"}, \code{"valores"}.}
 }
 \value{
-Invisible \code{NULL}. Modifica los archivos en el directorio
-  configurado.
+Invisible \code{NULL}.
 }
 \description{
-Aplica las etiquetas del diccionario oficial del INDEC a los archivos
-de microdatos generados por \code{extraer_redatam()}. El proceso
+Aplica las etiquetas del diccionario a los archivos de microdatos
+generados por \code{extraer_redatam()} o \code{extraer_dic()}. El proceso
 realiza tres transformaciones sobre cada archivo:
 
 \enumerate{
-  \item Limpia los nombres de columna eliminando los sufijos numericos
+  \item Limpia los nombres de columna eliminando sufijos numericos
     del motor REDATAM (\code{p01_0} -> \code{P01}).
   \item Agrega una etiqueta descriptiva a cada variable
     (atributo \code{label}).
   \item Convierte las variables categoricas a factor con las etiquetas
-    de sus categorias (ej: \code{1} -> \code{"Jefa o jefe"}).
+    de sus categorias (solo con fuente \code{"xls"} o \code{"redatam"}).
 }
 
-Las variables geograficas identificadoras no se convierten a factor
-porque sus codigos no corresponden al nivel jerarquico del diccionario.
+Las variables geograficas identificadoras no se convierten a factor.
 
-El proceso es idempotente: si un archivo ya fue etiquetado, se detecta
-automaticamente y se omite sin modificarlo.
+El proceso es idempotente: si un archivo ya fue etiquetado, se omite.
 }
 \examples{
 \dontrun{
-# Etiquetar todas las provincias (configuracion automatica)
+# Seleccion automatica de fuente (recomendado)
 censo_etiquetar()
 
 # Solo Formosa y Salta
 censo_etiquetar(provincias = c(34, 66))
 
-# Solo la base de Personas
-censo_etiquetar(bases = "Personas")
-
-# Usando el motor REDATAM como fuente de metadatos
-censo_etiquetar(fuente_meta = "redatam")
+# Censos anteriores con base .dicX
+censo_etiquetar(
+  fuente_meta = "dic",
+  dic_path    = "D:/Censos/censo2010.dicX"
+)
 }
 
 }
 \seealso{
-\code{\link{extraer_redatam}}, \code{\link{censo_leer}}
+\code{\link{extraer_redatam}}, \code{\link{extraer_dic}},
+  \code{\link{censo_leer}}
 }

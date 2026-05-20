@@ -1192,6 +1192,7 @@ extraer_bloque_dic <- function(dic_path, spc, entidad, nom_bloque,
 #' }
 #'
 #' @seealso \code{\link{extraer_redatam}}, \code{\link{censo_etiquetar}}
+#' @importFrom utils tail
 #' @export
 extraer_dic <- function(
     dic_path       = NULL,
