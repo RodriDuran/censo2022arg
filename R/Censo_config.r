@@ -346,7 +346,7 @@ censo_rxdb_vp <- function() file.path(censo_dir_vp(), "cpv2022.rxdb")
 censo_rxdb_po <- function() file.path(censo_dir_po(), "cpv2022.rxdb")
 
 #' @keywords internal
-censo_rxdb_vc <- function() file.path(censo_dir_vc(), "cpv2022col.rxdb")
+censo_rxdb_vc <- function() file.path(censo_dir_vc(), "cpv2022_col.rxdb")
 
 #' @keywords internal
 censo_xls_vp <- function() file.path(censo_dir_dicc(),
@@ -629,7 +629,7 @@ censo_info <- function() {
   archivos <- list(
     "Base VP  (cpv2022.rxdb)"       = censo_rxdb_vp(),
     "Base PO  (cpv2022.rxdb)"       = censo_rxdb_po(),
-    "Base VC  (cpv2022col.rxdb)"    = censo_rxdb_vc(),
+    "Base VC  (cpv2022_col.rxdb)"   = censo_rxdb_vc(),
     "Diccionario VP (XLS)"          = censo_xls_vp(),
     "Diccionario VC (XLS)"          = censo_xls_vc()
   )
